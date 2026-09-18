@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     input_map.bind("rotate_light", vkhr::Input::Key::L);
     input_map.bind("recompile", vkhr::Input::Key::R);
 
-    vkhr::Rasterizer rasterizer { window, scene_graph };
+    vkhr::Rasterizer rasterizer { window, scene_graph }; // Rasterizer构造，建齐全部Vulkan资源/pipeline
 
     if (argp["ui"].value.boolean == 0)
         rasterizer.get_imgui().hide();
@@ -64,8 +64,8 @@ int main(int argc, char** argv) {
         rasterizer.run_benchmarks(scene_graph);
     }
 
-    while (window.is_open()) {
-        if (input_map.just_pressed("quit")) {
+    while (window.is_open()) { // render loop
+        if (input_map.just_pressed("quit")) { // handle key events
             window.close();
         } else if (input_map.just_pressed("toggle_ui")) {
             imgui.toggle_visibility();
@@ -94,12 +94,12 @@ int main(int argc, char** argv) {
             rasterizer.recreate_swapchain(window, scene_graph); // slow!?
         }
 
-        if (imgui.raytracing_enabled()) {
+        if (imgui.raytracing_enabled()) { // 如果光追开启，默认关闭，可以忽略
             ray_tracer.draw(scene_graph);
             auto& framebuffer = ray_tracer.get_framebuffer();
             rasterizer.draw(framebuffer);
         } else {
-            rasterizer.draw(scene_graph);
+            rasterizer.draw(scene_graph); // 真正的渲染操作只有这一句
         }
 
         // Benchmark the renderer and dump timings.

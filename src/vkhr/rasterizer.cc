@@ -236,16 +236,16 @@ namespace vkhr {
         ppll.clear(command_buffers[frame]);
         vk::DebugMarker::close(command_buffers[frame], "Clear PPLL Nodes", query_pools[frame]);
 
-        command_buffers[frame].begin_render_pass(color_pass, framebuffers[frame],
+        command_buffers[frame].begin_render_pass(color_pass, framebuffers[frame], // 白底清屏
                                                  { 1.00f, 1.00f, 1.00f, 1.00f });
 
         vk::DebugMarker::begin(command_buffers[frame], "Draw Mesh Models", query_pools[frame]);
-        draw_model(scene_graph, model_mesh_pipeline, command_buffers[frame]);
+        draw_model(scene_graph, model_mesh_pipeline, command_buffers[frame]); // 头部模型
         vk::DebugMarker::close(command_buffers[frame], "Draw Mesh Models", query_pools[frame]);
 
         if (imgui.rasterizer_enabled(level_of_detail)) {
             vk::DebugMarker::begin(command_buffers[frame], "Draw Hair Styles", query_pools[frame]);
-            draw_hairs(scene_graph, hair_style_pipeline, command_buffers[frame]);
+            draw_hairs(scene_graph, hair_style_pipeline, command_buffers[frame]); // **重要！画头发**
             vk::DebugMarker::close(command_buffers[frame], "Draw Hair Styles", query_pools[frame]);
         }
 
