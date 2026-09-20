@@ -1,9 +1,0 @@
-\usepackage{etoolbox}
-\makeatletter
-\patchcmd{\@chapter}
-{\chaptermark{#1}}
-{\chaptermark{#1}
-  \addtocontents{loa}
-  {\protect\addvspace{10\p@}}
-}{}{} % Patch algorithm list.
-\makeatother
