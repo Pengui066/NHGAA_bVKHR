@@ -20,13 +20,25 @@ namespace vkhr {
         glfwWindowHint(GLFW_VISIBLE,   GLFW_FALSE);
 
         GLFWmonitor* primary_monitor { glfwGetPrimaryMonitor() };
-        const GLFWvidmode* primary_vid_mode { glfwGetVideoMode(primary_monitor) };
+        const GLFWvidmode* primary_vid_mode { primary_monitor != nullptr
+                                                 ? glfwGetVideoMode(primary_monitor)
+                                                 : nullptr };
 
-        monitor_width  = primary_vid_mode->width;
-        monitor_height = primary_vid_mode->height;
-        monitor_refresh_rate = primary_vid_mode->refreshRate;
+        if (primary_monitor == nullptr || primary_vid_mode == nullptr) {
+            // No monitor is attached to the current session (e.g. the
+            // machine is locked or headless): fall back to sane defaults
+            // instead of dereferencing a null video mode.
+            monitor_width  = width;
+            monitor_height = height;
+            monitor_refresh_rate = 60;
+            monitor = nullptr;
+        } else {
+            monitor_width  = primary_vid_mode->width;
+            monitor_height = primary_vid_mode->height;
+            monitor_refresh_rate = primary_vid_mode->refreshRate;
 
-        monitor = primary_monitor;
+            monitor = primary_monitor;
+        }
 
         // This is needed to create a "windowed" fullscreen window.
         glfwWindowHint(GLFW_RED_BITS,     primary_vid_mode->redBits);

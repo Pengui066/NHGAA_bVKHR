@@ -16,7 +16,6 @@
 #include <filesystem>
 #include <sstream>
 
-#define DUMP_TRACE(msg) std::cerr << "[dump] " << msg << std::endl;
 
 namespace vkhr {
     namespace vulkan {
@@ -42,16 +41,12 @@ namespace vkhr {
                                          const GBufferDumpConfig& dump_config)
                                         : renderer { vulkan_renderer },
                                           config { dump_config } {
-            DUMP_TRACE("recorder: creating camera buffers");
             camera_buffer      = vk::UniformBuffer::create(renderer.device, sizeof(ViewProjection), 1, "Dump Camera (Input)");
             camera_gt_buffer   = vk::UniformBuffer::create(renderer.device, sizeof(ViewProjection), 1, "Dump Camera (GT)");
             prev_camera_buffer = vk::UniformBuffer::create(renderer.device, sizeof(ViewProjection), 1, "Dump Previous Camera");
 
-            DUMP_TRACE("recorder: creating render passes");
             create_render_passes();
-            DUMP_TRACE("recorder: creating pipelines");
             create_pipelines();
-            DUMP_TRACE("recorder: pipelines created");
 
             gbuffer_sampler = vk::Sampler {
                 renderer.device,
@@ -608,7 +603,6 @@ namespace vkhr {
             command_buffer.set_scissor(target.scissor);
 
             command_buffer.bind_pipeline(head_occlusion_pipeline);
-            DUMP_TRACE("  occlusion pipeline bound");
 
             glm::mat4 projection_view = current_transform.projection * current_transform.view;
 
@@ -616,7 +610,6 @@ namespace vkhr {
                 command_buffer.push_constant(head_occlusion_pipeline, 0,
                                              projection_view * model_node->get_model_matrix());
                 for (auto& model_mesh : model_node->get_models()) {
-                    DUMP_TRACE("   occlusion draw");
                     auto& model = renderer.models[model_mesh];
                     command_buffer.bind_vertex_buffer(0, model.vertices, 0);
                     command_buffer.bind_index_buffer(model.elements, 0);
@@ -631,7 +624,6 @@ namespace vkhr {
             command_buffer.set_scissor(target.scissor);
 
             command_buffer.bind_pipeline(hair_gbuffer_pipeline);
-            DUMP_TRACE("  hair gbuffer pipeline bound");
 
             bool input_resolution = (&target == &input_target);
 
@@ -643,7 +635,6 @@ namespace vkhr {
 
             for (auto& hair_node : scene_graph.get_nodes_with_hair_styles()) {
                 for (auto& hair_style : hair_node->get_hair_styles()) {
-                    DUMP_TRACE("   hair draw");
                     auto& style = renderer.hair_styles[hair_style];
 
                     float strand_width = style.parameters.strand_radius * width_scale;
@@ -741,9 +732,7 @@ namespace vkhr {
         }
 
         void GBufferRecorder::record_frame(SceneGraph& scene_graph) {
-            DUMP_TRACE("rf: updating cameras");
             update_camera_buffers();
-            DUMP_TRACE("rf: cameras updated");
 
             auto command_buffer = renderer.command_pool.allocate_and_begin();
 
@@ -752,9 +741,7 @@ namespace vkhr {
             // for the dynamic case later on). We cannot reuse
             // Rasterizer::draw_depth here, since it records its debug
             // markers into the (never-begun) main-loop command buffers.
-            DUMP_TRACE("rf: baking shadows");
             bake_shadow_maps(scene_graph, command_buffer);
-            DUMP_TRACE("rf: shadows baked");
 
             VkClearValue zero { }, depth_one { }, white { };
             zero.color   = { { 0.0f, 0.0f, 0.0f, 0.0f } };
@@ -765,28 +752,26 @@ namespace vkhr {
                 // The hair G-buffer: head occlusion first, then strands.
                 std::vector<VkClearValue> gbuffer_clears { zero, zero, zero, depth_one };
 
-                DUMP_TRACE("rf: gbuffer pass");
                 command_buffer.begin_render_pass(gbuffer_pass, target->gbuffer_framebuffer, gbuffer_clears);
                 draw_head_occlusion(scene_graph, command_buffer, *target);
                 draw_hair_gbuffer(scene_graph, command_buffer, *target);
-                DUMP_TRACE("rf: gbuffer pass ended");
                 command_buffer.end_render_pass();
 
-                // The background (the head shaded as usual).
-                std::vector<VkClearValue> background_clears { white, depth_one };
+                if (config.dump_shaded) {
+                    // The background (the head shaded as usual).
+                    std::vector<VkClearValue> background_clears { white, depth_one };
 
-                DUMP_TRACE("rf: background pass");
-                command_buffer.begin_render_pass(background_pass, target->background_framebuffer, background_clears);
-                draw_background(scene_graph, command_buffer, *target);
-                command_buffer.end_render_pass();
+                    command_buffer.begin_render_pass(background_pass, target->background_framebuffer, background_clears);
+                    draw_background(scene_graph, command_buffer, *target);
+                    command_buffer.end_render_pass();
 
-                // The deferred hair shading over the background.
-                std::vector<VkClearValue> shading_clears { white };
+                    // The deferred hair shading over the background.
+                    std::vector<VkClearValue> shading_clears { white };
 
-                DUMP_TRACE("rf: shading pass");
-                command_buffer.begin_render_pass(shading_pass, target->shading_framebuffer, shading_clears);
-                draw_deferred_shading(command_buffer, *target);
-                command_buffer.end_render_pass();
+                    command_buffer.begin_render_pass(shading_pass, target->shading_framebuffer, shading_clears);
+                    draw_deferred_shading(command_buffer, *target);
+                    command_buffer.end_render_pass();
+                }
             }
 
             // Transition every attachment into a transfer source, then
@@ -809,8 +794,10 @@ namespace vkhr {
                 transition_to_source(target->tangent);
                 transition_to_source(target->motion);
                 transition_to_source(target->depth);
-                transition_to_source(target->background);
-                transition_to_source(target->shaded);
+                if (config.dump_shaded) {
+                    transition_to_source(target->background);
+                    transition_to_source(target->shaded);
+                }
             }
 
             auto copy_attachment = [&](Attachment& attachment, vk::HostBuffer& buffer) {
@@ -822,17 +809,16 @@ namespace vkhr {
                 copy_attachment(target->tangent,    target->tangent_buffer);
                 copy_attachment(target->motion,     target->motion_buffer);
                 copy_attachment(target->depth,      target->depth_buffer);
-                copy_attachment(target->background, target->background_buffer);
-                copy_attachment(target->shaded,     target->shaded_buffer);
+                if (config.dump_shaded) {
+                    copy_attachment(target->background, target->background_buffer);
+                    copy_attachment(target->shaded,     target->shaded_buffer);
+                }
             }
 
-            DUMP_TRACE("rf: ending command buffer");
             command_buffer.end();
 
-            DUMP_TRACE("rf: submitting");
             renderer.device.get_graphics_queue().submit(command_buffer).wait_idle();
-            DUMP_TRACE("rf: submitted + idle");
-        }
+                    }
 
         void GBufferRecorder::write_binary(const std::string& path, void* data, std::size_t size) {
             std::ofstream file { path, std::ios::binary };
@@ -861,14 +847,16 @@ namespace vkhr {
             save(input_target.tangent_buffer,    input_directory + "/" + frame_tag.str() + "_tangent.f16");
             save(input_target.motion_buffer,     input_directory + "/" + frame_tag.str() + "_motion.f16");
             save(input_target.depth_buffer,      input_directory + "/" + frame_tag.str() + "_depth.f32");
-            save(input_target.background_buffer, input_directory + "/" + frame_tag.str() + "_background.f32");
-            save(input_target.shaded_buffer,     input_directory + "/" + frame_tag.str() + "_shaded.f32");
-
             save(gt_target.coverage_buffer,      gt_directory + "/" + frame_tag.str() + "_coverage.f16");
             save(gt_target.tangent_buffer,       gt_directory + "/" + frame_tag.str() + "_tangent.f16");
             save(gt_target.depth_buffer,         gt_directory + "/" + frame_tag.str() + "_depth.f32");
-            save(gt_target.background_buffer,    gt_directory + "/" + frame_tag.str() + "_background.f32");
-            save(gt_target.shaded_buffer,        gt_directory + "/" + frame_tag.str() + "_shaded.f32");
+
+            if (config.dump_shaded) {
+                save(input_target.background_buffer, input_directory + "/" + frame_tag.str() + "_background.f32");
+                save(input_target.shaded_buffer,     input_directory + "/" + frame_tag.str() + "_shaded.f32");
+                save(gt_target.background_buffer,    gt_directory + "/" + frame_tag.str() + "_background.f32");
+                save(gt_target.shaded_buffer,        gt_directory + "/" + frame_tag.str() + "_shaded.f32");
+            }
         }
 
         static void write_json_matrix(nlohmann::json& value, const glm::mat4& matrix) {
@@ -889,6 +877,12 @@ namespace vkhr {
             meta["camera_script"] = config.camera_script;
             meta["frame_count"] = config.frame_count;
             meta["ssaa_factor"] = config.ssaa_factor;
+            meta["camera_seed"] = config.camera_seed;
+            meta["distance_range"] = { config.distance_min, config.distance_max };
+            meta["elevation_range_deg"] = { config.elevation_min, config.elevation_max };
+            meta["radius_range"] = { config.radius_min, config.radius_max };
+            meta["dump_shaded"] = config.dump_shaded;
+            meta["random_light"] = config.random_light;
 
             meta["input_resolution"] = { input_target.width, input_target.height };
             meta["gt_resolution"] = { gt_target.width, gt_target.height };
@@ -938,6 +932,28 @@ namespace vkhr {
             previous_transform = current_transform = scene_graph.get_camera().get_transform();
 
             for (unsigned frame { 0 }; frame < config.frame_count; ++frame) {
+                if (config.random_light) {
+                    std::mt19937 light_generator { config.camera_seed * 15485u + frame };
+
+                    std::uniform_real_distribution<float> azimuth { 0.0f, 2.0f * Pi };
+                    std::uniform_real_distribution<float> elevation { glm::radians(-30.0f),
+                                                                      glm::radians(+60.0f) };
+
+                    float az = azimuth(light_generator);
+                    float el = elevation(light_generator);
+
+                    glm::vec3 direction { glm::cos(el) * glm::cos(az),
+                                          glm::sin(el),
+                                          glm::cos(el) * glm::sin(az) };
+
+                    for (auto& light_source : scene_graph.light_sources) {
+                        light_source.set_direction(direction);
+                        light_source.update_view_matrix();
+                    }
+
+                    renderer.lights[0].update(scene_graph.fetch_light_source_buffers());
+                }
+
                 script_camera(scene_graph, frame);
 
                 current_transform = scene_graph.get_camera().get_transform();

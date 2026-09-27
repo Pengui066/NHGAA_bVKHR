@@ -183,5 +183,14 @@ namespace vkhr {
         { "dump-ssaa",    Argument::Type::Integer, Argument::make_integer(2),        "" },
         { "camera-script", Argument::Type::String, Argument::make_string("static"),  "" },
         { "strand-radius", Argument::Type::Floating, Argument::make_floating(-1.0f), "" },
+        { "camera-seed",   Argument::Type::Integer,  Argument::make_integer(0),      "" },
+        { "distance-min",  Argument::Type::Floating, Argument::make_floating(2.5f),  "" },
+        { "distance-max",  Argument::Type::Floating, Argument::make_floating(5.0f),  "" },
+        { "elevation-min", Argument::Type::Floating, Argument::make_floating(-20.0f), "" },
+        { "elevation-max", Argument::Type::Floating, Argument::make_floating(40.0f), "" },
+        { "radius-min",    Argument::Type::Floating, Argument::make_floating(-1.0f), "" },
+        { "radius-max",    Argument::Type::Floating, Argument::make_floating(-1.0f), "" },
+        { "dump-shaded",   Argument::Type::Boolean,  Argument::make_boolean(true),   "" },
+        { "light-random",  Argument::Type::Boolean,  Argument::make_boolean(false),  "" },
     };
 }

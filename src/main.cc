@@ -39,22 +39,22 @@ int main(int argc, char** argv) {
 
     vkhr::ArgParser argp { vkhr::arguments };
     auto scene_file = argp.parse(argc, argv);
-
+    
     if (scene_file.empty()) scene_file = SCENE("ponytail.vkhr");
 
-    vkhr::SceneGraph scene_graph { scene_file };
-    auto& camera { (scene_graph.get_camera()) };
+        vkhr::SceneGraph scene_graph { scene_file };
+        auto& camera { (scene_graph.get_camera()) };
 
     int width  = argp["x"].value.integer,
         height = argp["y"].value.integer;
 
     camera.set_resolution(width, height);
 
-    vkhr::Raytracer ray_tracer { scene_graph };
-
+        vkhr::Raytracer ray_tracer { scene_graph };
+    
     const vkhr::Image vulkan_icon { IMAGE("vulkan_icon.png") };
-    vkhr::Window window { width, height, "VKHR", vulkan_icon };
-
+        vkhr::Window window { width, height, "VKHR", vulkan_icon };
+    
     if (argp["fullscreen"].value.boolean)
         window.toggle_fullscreen();
 
@@ -96,6 +96,15 @@ int main(int argc, char** argv) {
         config.ssaa_factor      = argp["dump-ssaa"].value.integer;
         config.camera_script    = argp["camera-script"].value.string;
         config.strand_radius    = argp["strand-radius"].value.floating;
+        config.camera_seed      = argp["camera-seed"].value.integer;
+        config.distance_min     = argp["distance-min"].value.floating;
+        config.distance_max     = argp["distance-max"].value.floating;
+        config.elevation_min    = argp["elevation-min"].value.floating;
+        config.elevation_max    = argp["elevation-max"].value.floating;
+        config.radius_min       = argp["radius-min"].value.floating;
+        config.radius_max       = argp["radius-max"].value.floating;
+        config.dump_shaded      = argp["dump-shaded"].value.boolean == 1;
+        config.random_light     = argp["light-random"].value.boolean == 1;
 
         rasterizer.dump_gbuffer(scene_graph, config);
         window.close();

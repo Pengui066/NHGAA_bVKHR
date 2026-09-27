@@ -27,8 +27,33 @@ namespace vkhr {
         std::string output_directory { "dumps" };
         unsigned    frame_count      { 1 };
         unsigned    ssaa_factor      { 2 };      // GT supersampling per axis.
-        std::string camera_script    { "static" }; // "static" or "orbit".
+        std::string camera_script    { "static" }; // "static", "orbit" or "random".
         float       strand_radius    { -1.0f };  // < 0 keeps the scene default.
+
+        // Random camera script ("random"): viewpoints are drawn on the
+        // sphere around the hair's bounding volume, distances are measured
+        // in bounding radii. Deterministic given the seed + frame index.
+        unsigned    camera_seed      { 0 };
+        float       distance_min     { 2.5f };   // in bounding radii.
+        float       distance_max     { 5.0f };
+        float       elevation_min    { -20.0f }; // degrees.
+        float       elevation_max    { +40.0f };
+
+        // Per-frame random strand radius (hair width variation). Enabled
+        // when radius_max > radius_min > 0; otherwise strand_radius (or
+        // the scene default) is used for every frame.
+        float       radius_min       { -1.0f };
+        float       radius_max       { -1.0f };
+
+        // When false, skip the background/deferred-shading passes and the
+        // corresponding outputs (training frames only need the G-buffer
+        // channels; shaded references are only needed for evaluation).
+        bool        dump_shaded      { true };
+
+        // Randomize the light direction every frame (azimuth in [0, 2pi),
+        // elevation in [-30, +60] degrees), so the dataset covers front,
+        // side and back lighting like the paper's evaluation.
+        bool        random_light     { false };
     };
 
     namespace vulkan {
@@ -139,6 +164,11 @@ namespace vkhr {
 
             glm::vec3 orbit_look_at { 0.0f };
             glm::vec3 orbit_offset  { 0.0f };
+
+            // Bounding volume of the (first) hair style, used by the
+            // random camera script for automatic framing.
+            glm::vec3 volume_center { 0.0f };
+            float     volume_radius { 1.0f };
 
             std::vector<nlohmann::json> frame_metadata;
         };

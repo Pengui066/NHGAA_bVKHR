@@ -1,0 +1,43 @@
+{
+    "camera": {
+        "fieldOfView": 25.0,
+        "lookAt": [ -15.04, 0.39, 6.21 ],
+        "origin": [ -15.04, 32.09, 217.56 ],
+        "upward": [ 0.0, 1.0, 0.0 ]
+    },
+
+    "lights": [
+        {
+            "direction": [ 1, 2, 1 ],
+            "intensity": [ 0.430,
+                           0.380,
+                           0.280 ]
+        }
+    ],
+
+    "root": 0,
+
+    "nodes": [
+        {
+            "children": [ 1 ]
+        },
+        {
+            "scale":     [1, 1, 1],
+            "translate": [0, 0, 0],
+            "rotate": {
+                "axis": [ 0, 1, 0 ],
+                "angle":  0.0
+            },
+
+            "name": "Straight Wig",
+
+            "models": [
+                "../models/woman/woman.obj"
+            ],
+
+            "styles": [
+                "../styles/wStraight.hair"
+            ]
+        }
+    ]
+}
