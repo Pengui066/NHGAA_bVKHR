@@ -158,3 +158,5 @@ flycheck_*.el
 
 docs/
 dumps/
+
+*.log
