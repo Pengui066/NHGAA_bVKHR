@@ -8,6 +8,7 @@
 #include <vkhr/rasterizer/billboard.hh>
 #include <vkhr/rasterizer/linked_list.hh>
 #include <vkhr/rasterizer/volume.hh>
+#include <vkhr/rasterizer/g_buffer_recorder.hh>
 
 #include <vkhr/rasterizer/depth_map.hh>
 #include <vkhr/renderer.hh>
@@ -56,6 +57,10 @@ namespace vkhr {
         bool swapchain_is_dirty() const;
 
         Interface& get_imgui();
+
+        // Offline hair G-buffer dump mode for the neural reconstruction
+        // pipeline: renders undersampled input + supersampled GT.
+        void dump_gbuffer(SceneGraph& scene_graph, const GBufferDumpConfig& config);
 
         struct Benchmark {
             std::string description;
@@ -157,6 +162,7 @@ namespace vkhr {
         friend class vulkan::Volume;
         friend class vulkan::Billboard;
         friend class vulkan::LinkedList;
+        friend class vulkan::GBufferRecorder;
 
         friend class vulkan::DepthMap;
 

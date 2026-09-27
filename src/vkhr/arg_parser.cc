@@ -177,5 +177,11 @@ namespace vkhr {
         { "vsync",      Argument::Type::Boolean, Argument::make_boolean(true),  "" },
         { "ui",         Argument::Type::Boolean, Argument::make_boolean(true),  "" },
         { "benchmark",  Argument::Type::Boolean, Argument::make_boolean(false), "" },
+        { "dump",         Argument::Type::Boolean, Argument::make_boolean(false),    "" },
+        { "dump-dir",     Argument::Type::String,  Argument::make_string("dumps"),   "" },
+        { "dump-frames",  Argument::Type::Integer, Argument::make_integer(1),        "" },
+        { "dump-ssaa",    Argument::Type::Integer, Argument::make_integer(2),        "" },
+        { "camera-script", Argument::Type::String, Argument::make_string("static"),  "" },
+        { "strand-radius", Argument::Type::Floating, Argument::make_floating(-1.0f), "" },
     };
 }

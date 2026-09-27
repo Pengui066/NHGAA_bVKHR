@@ -40,6 +40,8 @@ namespace vkhr {
             vk::IndexBuffer  elements;
             vk::VertexBuffer vertices;
 
+            friend class GBufferRecorder;
+
             static int id;
         };
     }

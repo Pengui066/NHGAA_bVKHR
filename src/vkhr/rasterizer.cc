@@ -95,6 +95,7 @@ namespace vkhr {
                 { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         64 },
                 { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64 },
                 { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         64 },
+                { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          64 },
                 { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,       64 }
             }
         };
@@ -469,6 +470,13 @@ namespace vkhr {
 
     Interface& Rasterizer::get_imgui() {
         return imgui;
+    }
+
+    void Rasterizer::dump_gbuffer(SceneGraph& scene_graph, const GBufferDumpConfig& config) {
+        device.wait_idle();
+
+        vulkan::GBufferRecorder recorder { *this, config };
+        recorder.dump(scene_graph);
     }
 
     bool Rasterizer::swapchain_is_dirty() const {

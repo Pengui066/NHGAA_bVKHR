@@ -78,6 +78,7 @@ namespace vkhr {
             std::size_t segments_per_strand;
 
             friend class Volume;
+            friend class GBufferRecorder;
 
             static int id;
         };

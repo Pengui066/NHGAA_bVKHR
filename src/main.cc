@@ -11,7 +11,32 @@
 
 #include <glm/glm.hpp>
 
+#ifdef DEBUG
+#ifdef WINDOWS
+// Route CRT assertions to stderr instead of blocking message boxes, so
+// automated (dump-mode) runs never wait for a human to click "Ignore".
+#include <crtdbg.h>
+#include <cstdlib>
+static void disable_debug_crt_dialogs() {
+    _CrtSetReportMode(_CRT_WARN,   _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_WARN,   _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR,  _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR,  _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    _set_invalid_parameter_handler([](const wchar_t*, const wchar_t*,
+                                      const wchar_t*, unsigned, uintptr_t) { });
+}
+#else
+static void disable_debug_crt_dialogs() { }
+#endif
+#else
+static void disable_debug_crt_dialogs() { }
+#endif
+
 int main(int argc, char** argv) {
+    disable_debug_crt_dialogs();
+
     vkhr::ArgParser argp { vkhr::arguments };
     auto scene_file = argp.parse(argc, argv);
 
@@ -57,7 +82,25 @@ int main(int argc, char** argv) {
 
     auto& imgui = rasterizer.get_imgui();
 
-    window.show();
+    // The dump mode runs fully offline: keep the window hidden and exit
+    // as soon as the last frame has been written to disk.
+    bool dump_mode = argp["dump"].value.boolean == 1;
+
+    if (!dump_mode)
+        window.show();
+
+    if (dump_mode) {
+        vkhr::GBufferDumpConfig config;
+        config.output_directory = argp["dump-dir"].value.string;
+        config.frame_count      = argp["dump-frames"].value.integer;
+        config.ssaa_factor      = argp["dump-ssaa"].value.integer;
+        config.camera_script    = argp["camera-script"].value.string;
+        config.strand_radius    = argp["strand-radius"].value.floating;
+
+        rasterizer.dump_gbuffer(scene_graph, config);
+        window.close();
+        return 0;
+    }
 
     if (argp["benchmark"].value.boolean == 1) {
         vkhr::Benchmark::construct(rasterizer);

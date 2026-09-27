@@ -234,6 +234,45 @@ namespace vkpp {
         vkCmdBeginRenderPass(handle, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
     }
 
+    void CommandBuffer::begin_render_pass(RenderPass& render_pass,
+                                          Framebuffer& framebuffer,
+                                          const std::vector<VkClearValue>& clear_values) {
+        VkRenderPassBeginInfo begin_info;
+        begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        begin_info.pNext = nullptr;
+
+        begin_info.renderPass = render_pass.get_handle();
+        begin_info.framebuffer = framebuffer.get_handle();
+        begin_info.renderArea.extent = framebuffer.get_extent();
+        begin_info.renderArea.offset = { 0, 0 };
+
+        begin_info.pClearValues    = clear_values.data();
+        begin_info.clearValueCount = static_cast<std::uint32_t>(clear_values.size());
+
+        vkCmdBeginRenderPass(handle, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    }
+
+    void CommandBuffer::copy_image_to_buffer(Image& source, Buffer& destination) {
+        VkBufferImageCopy region;
+
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0; // tightly packed.
+        region.bufferImageHeight = 0;
+
+        region.imageSubresource.aspectMask = source.get_aspect_mask();
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+
+        region.imageOffset = { 0, 0, 0 };
+        region.imageExtent = source.get_extent();
+
+        vkCmdCopyImageToBuffer(handle,
+                               source.get_handle(), source.get_layout(),
+                               destination.get_handle(),
+                               1, &region);
+    }
+
     void CommandBuffer::set_viewport(VkViewport& viewport) {
         vkCmdSetViewport(handle, 0, 1, &viewport);
     }

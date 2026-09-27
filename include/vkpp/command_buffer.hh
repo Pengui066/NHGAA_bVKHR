@@ -54,6 +54,7 @@ namespace vkpp {
 
         void blit_image(Image& source, Image& destination, VkFilter filter);
         void copy_image(Image& source, Image& destination);
+        void copy_image_to_buffer(Image& source, Buffer& destination);
 
         void fill_buffer(Buffer& buffer, VkDeviceSize offset, VkDeviceSize size, std::uint32_t data);
         void clear_color_image(Image& image, VkClearColorValue clear_color);
@@ -68,6 +69,9 @@ namespace vkpp {
         void begin_render_pass(RenderPass& render_pass,
                                Framebuffer& framebuffer,
                                VkClearValue clear_color);
+        void begin_render_pass(RenderPass& render_pass,
+                               Framebuffer& framebuffer,
+                               const std::vector<VkClearValue>& clear_values);
 
         void next_subpass();
 
