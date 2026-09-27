@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Preview a vkhr G-buffer dump: converts the raw channel files into
-PNG contact sheets for quick visual inspection.
+PNG images for quick visual inspection.
 
 Usage: python utils/preview_dump.py dumps/test
 """
@@ -9,19 +9,24 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 def load_raw(path: Path, dtype: str, channels: int, width: int, height: int) -> np.ndarray:
     data = np.fromfile(path, dtype=dtype)
     expected = width * height * channels
     if data.size != expected:
-        raise ValueError(f"{path.name}: expected {expected} values, got {data.size}")
+        raise ValueError(
+            f"{path.name}: expected {expected} values ({width}x{height}x{channels}), "
+            f"got {data.size} ({data.size / channels:.0f} pixels).\n"
+            "The dump in this directory is incomplete or was written by a run with "
+            "different settings. Re-run the vkhr dump command into a fresh directory."
+        )
     return data.reshape(height, width, channels)
 
 
 def tonemap(image: np.ndarray) -> np.ndarray:
-    """Maps arbitrary float data to displayable uint8."""
+    """Maps arbitrary float data to displayable uint8 (1st-99.5th percentile)."""
     image = np.nan_to_num(image, nan=0.0, posinf=0.0, neginf=0.0)
     lo, hi = np.percentile(image, [1.0, 99.5])
     if hi <= lo:
@@ -35,21 +40,30 @@ def to_u8(image: np.ndarray, mode: str) -> np.ndarray:
     return tonemap(image)
 
 
-def channel_grid(name: str, image: np.ndarray, mode: str) -> Image.Image:
-    """Renders an HxWxC float image (C <= 4) as a labelled grayscale/RGB tile."""
-    channels = [image[:, :, i] for i in range(image.shape[2])]
-    tiles = [to_u8(c[None, :, :].transpose(1, 2, 0).repeat(3, 2), mode) for c in channels]
-    tiles = [t.reshape(image.shape[0], image.shape[1], 3) for t in tiles]
+def grayscale(image: np.ndarray, mode: str) -> Image.Image:
+    return Image.fromarray(to_u8(image, "tonemap" if mode == "auto" else mode))
 
-    # pad to 4 tiles for a consistent 2x2 grid.
+
+def labeled(band: Image.Image, text: str) -> Image.Image:
+    """Returns the band with a white caption strip above it."""
+    strip = 26
+    out = Image.new("RGB", (band.width, band.height + strip), "white")
+    out.paste(band, (0, strip))
+    draw = ImageDraw.Draw(out)
+    draw.text((8, 6), text, fill="black")
+    return out
+
+
+def channel_grid(image: np.ndarray, mode: str) -> Image.Image:
+    """Renders an HxWxC float image (C <= 4) as a 2x2 grid of channels."""
+    channels = [image[:, :, i] for i in range(image.shape[2])]
+    tiles = [to_u8(c, mode) for c in channels]
     while len(tiles) < 4:
         tiles.append(np.zeros_like(tiles[0]))
 
     top = np.concatenate(tiles[0:2], axis=1)
     bottom = np.concatenate(tiles[2:4], axis=1)
-    grid = np.concatenate([top, bottom], axis=0)
-
-    return Image.fromarray(grid)
+    return Image.fromarray(np.concatenate([top, bottom], axis=0))
 
 
 def main():
@@ -60,11 +74,21 @@ def main():
     dump_dir = Path(sys.argv[1])
     meta = json.loads((dump_dir / "meta.json").read_text())
 
+    if not meta.get("complete", True):
+        print(f"error: '{dump_dir}' holds an INCOMPLETE dump (meta.json says "
+              "complete=false). The dump process was interrupted or is still "
+              "running. Re-run the vkhr dump command.")
+        sys.exit(1)
+
     width, height = meta["input_resolution"]
     gt_width, gt_height = meta["gt_resolution"]
+    ssaa = meta.get("ssaa_factor", gt_width // width)
 
     out_dir = dump_dir / "preview"
     out_dir.mkdir(exist_ok=True)
+
+    print(f"{dump_dir}: {width}x{height} input, {gt_width}x{gt_height} GT "
+          f"(ssaa x{ssaa})")
 
     frames = sorted((dump_dir / "input").glob("*_coverage.f16"))
     for input_coverage_path in frames:
@@ -81,23 +105,33 @@ def main():
 
         # 1. The shaded input (the "Input" baseline) and shaded GT (Reference).
         Image.fromarray(to_u8(input_shaded[:, :, :3], "linear")).save(out_dir / f"{tag}_shaded_input.png")
-        reference = Image.fromarray(to_u8(gt_shaded[:, :, :3], "linear"))
-        reference.save(out_dir / f"{tag}_shaded_reference.png")
+        Image.fromarray(to_u8(gt_shaded[:, :, :3], "linear")).save(out_dir / f"{tag}_shaded_reference.png")
 
-        # 2. Coverage: input on top, GT (downsampled for display) below.
-        gt_small = np.array(reference.resize((width, height), Image.BOX))
-        coverage_pair = np.concatenate([
-            to_u8(input_coverage, "tonemap").reshape(height, width, 1).repeat(3, 2),
-            to_u8(gt_small[..., :3], "linear"),
-        ], axis=0)
-        Image.fromarray(coverage_pair).save(out_dir / f"{tag}_coverage_pair.png")
+        # 2. The coverage comparison, band by band, with captions:
+        #    top    - the undersampled input coverage (grayscale),
+        #    middle - the high-sample GT coverage, downsampled (grayscale),
+        #    bottom - the GT after deferred shading (the "Reference" look).
+        gt_coverage_small = np.array(grayscale(gt_coverage[:, :, 0], "linear")
+                                     .resize((width, height), Image.BOX))
+        gt_shaded_small = np.array(Image.fromarray(to_u8(gt_shaded[:, :, :3], "linear"))
+                                   .resize((width, height), Image.BOX))
+
+        bands = Image.new("RGB", (width, 3 * height), "black")
+        bands.paste(grayscale(input_coverage[:, :, 0], "linear"), (0, 0))
+        bands.paste(Image.fromarray(gt_coverage_small), (0, height))
+        bands.paste(Image.fromarray(gt_shaded_small), (0, 2 * height))
+
+        comparison = labeled(bands, f"{tag}: input coverage (1 spp, broken) | "
+                                    f"GT coverage ({ssaa}x SSAA, converged) | "
+                                    f"GT shaded reference")
+        comparison.save(out_dir / f"{tag}_coverage_comparison.png")
 
         # 3. Tangent visualization (world-space, canonical orientation).
-        channel_grid("tangent", input_tangent[:, :, :3], "linear").save(
+        channel_grid(input_tangent[:, :, :3], "linear").save(
             out_dir / f"{tag}_tangent_channels.png")
 
         # 4. Depth + background.
-        channel_grid("depth", input_depth, "tonemap").save(out_dir / f"{tag}_depth.png")
+        channel_grid(input_depth, "auto").save(out_dir / f"{tag}_depth.png")
         Image.fromarray(to_u8(input_background[:, :, :3], "linear")).save(
             out_dir / f"{tag}_background.png")
 
@@ -113,11 +147,10 @@ def main():
             print(f"{tag}: motion pixels {moved} / {width * height}")
 
         hair_pixels = np.count_nonzero(input_coverage > 0)
-        gt_small_cov = np.array(
-            Image.fromarray((np.clip(gt_coverage, 0, 1) * 255).astype(np.uint8)
-                            .reshape(gt_height, gt_width)).resize((width, height), Image.BOX))
-        print(f"{tag}: input hair pixels {hair_pixels} ({100.0 * hair_pixels / (width * height):.2f}%), "
-              f"GT hair pixels {np.count_nonzero(gt_small_cov > 2)}")
+        gt_hair_pixels = np.count_nonzero(gt_coverage > 0) / (ssaa * ssaa)
+        print(f"{tag}: input hair pixels {hair_pixels} "
+              f"({100.0 * hair_pixels / (width * height):.2f}%), "
+              f"GT hair pixels ~{gt_hair_pixels:.0f} (equivalent)")
 
     print(f"previews written to {out_dir}")
 

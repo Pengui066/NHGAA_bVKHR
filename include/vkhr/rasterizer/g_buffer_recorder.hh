@@ -102,7 +102,7 @@ namespace vkhr {
             void readback_frame(unsigned frame_index);
 
             void write_binary(const std::string& path, void* data, std::size_t size);
-            void write_meta();
+            void write_meta(bool complete);
 
             static Attachment create_attachment(Rasterizer& renderer, std::uint32_t width,
                                                 std::uint32_t height, VkFormat format,

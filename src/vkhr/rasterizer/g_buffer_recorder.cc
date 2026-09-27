@@ -877,8 +877,13 @@ namespace vkhr {
                     value.push_back(matrix[column][row]);
         }
 
-        void GBufferRecorder::write_meta() {
+        void GBufferRecorder::write_meta(bool complete) {
             nlohmann::json meta;
+
+            // Written once as { "complete": false } before the first frame
+            // and overwritten with { "complete": true } at the end, so an
+            // interrupted dump is always detectable from the metadata.
+            meta["complete"] = complete;
 
             meta["renderer"] = "vkhr G-buffer dump";
             meta["camera_script"] = config.camera_script;
@@ -928,6 +933,8 @@ namespace vkhr {
             std::filesystem::create_directories(config.output_directory + "/input");
             std::filesystem::create_directories(config.output_directory + "/gt");
 
+            write_meta(false); // mark the dump as in-progress.
+
             previous_transform = current_transform = scene_graph.get_camera().get_transform();
 
             for (unsigned frame { 0 }; frame < config.frame_count; ++frame) {
@@ -959,7 +966,7 @@ namespace vkhr {
                 previous_transform = current_transform;
             }
 
-            write_meta();
+            write_meta(true);
 
             std::cout << "vkhr: dump complete, written to '" << config.output_directory << "'.\n";
         }
