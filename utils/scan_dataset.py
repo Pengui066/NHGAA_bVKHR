@@ -28,16 +28,17 @@ BYTES_PER_PIXEL = {
 }
 
 
-def check_frame(frame_dir: Path, tag: str, width: int, height: int, expected: dict) -> str:
+def check_frame(frame_dir: Path, tag: str, width: int, height: int,
+                gt_width: int, gt_height: int, expected: dict) -> str:
+    dims = {"input": (width, height), "gt": (gt_width, gt_height)}
     for sub, channels in expected.items():
         for suffix in channels:
             path = frame_dir / sub / (tag + suffix)
             if not path.exists():
                 return f"missing {sub}/{tag}{suffix}"
-            expected_size = width * height * BYTES_PER_PIXEL[suffix]
+            w, h = dims[sub]
+            expected_size = w * h * BYTES_PER_PIXEL[suffix]
             actual_size = path.stat().st_size
-            if suffix == "_tangent.f16" and sub == "input":
-                expected_size = width * height * 8
             if actual_size != expected_size:
                 return f"size mismatch {sub}/{tag}{suffix}: {actual_size} != {expected_size}"
     return "ok"
@@ -45,7 +46,7 @@ def check_frame(frame_dir: Path, tag: str, width: int, height: int, expected: di
 
 def coverage_stats(path: Path, width: int, height: int, stride: int = 7) -> dict:
     """Downsampled coverage statistics (fast: reads a strided sample)."""
-    raw = np.fromfile(path, dtype="<f2")
+    raw = np.fromfile(path, dtype="<f2").astype(np.float32)
     sample = raw[::stride]
     coverage = np.clip(sample, 0, 1)
     return {
@@ -92,7 +93,7 @@ def main():
 
         # Spot-check sizes on the first and last frames.
         for tag in (tags[0], tags[-1]):
-            state = check_frame(dump_dir, tag, width, height, expected)
+            state = check_frame(dump_dir, tag, width, height, gt_width, gt_height, expected)
             if state != "ok":
                 problems.append(f"{dump_dir.name}/{tag}: {state}")
 

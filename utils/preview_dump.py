@@ -97,15 +97,19 @@ def main():
         input_coverage = load_raw(dump_dir / "input" / f"{tag}_coverage.f16", "<f2", 1, width, height)
         input_tangent = load_raw(dump_dir / "input" / f"{tag}_tangent.f16", "<f2", 4, width, height)
         input_depth = load_raw(dump_dir / "input" / f"{tag}_depth.f32", "<f4", 1, width, height)
-        input_shaded = load_raw(dump_dir / "input" / f"{tag}_shaded.f32", "<f4", 4, width, height)
-        input_background = load_raw(dump_dir / "input" / f"{tag}_background.f32", "<f4", 4, width, height)
 
         gt_coverage = load_raw(dump_dir / "gt" / f"{tag}_coverage.f16", "<f2", 1, gt_width, gt_height)
-        gt_shaded = load_raw(dump_dir / "gt" / f"{tag}_shaded.f32", "<f4", 4, gt_width, gt_height)
 
-        # 1. The shaded input (the "Input" baseline) and shaded GT (Reference).
-        Image.fromarray(to_u8(input_shaded[:, :, :3], "linear")).save(out_dir / f"{tag}_shaded_input.png")
-        Image.fromarray(to_u8(gt_shaded[:, :, :3], "linear")).save(out_dir / f"{tag}_shaded_reference.png")
+        # Training dumps (--dump-shaded no) hold only the G-buffer channels;
+        # evaluation dumps also carry the shaded input/reference images.
+        input_shaded_path = dump_dir / "input" / f"{tag}_shaded.f32"
+        if input_shaded_path.exists():
+            input_shaded = load_raw(input_shaded_path, "<f4", 4, width, height)
+            input_background = load_raw(dump_dir / "input" / f"{tag}_background.f32", "<f4", 4, width, height)
+            gt_shaded = load_raw(dump_dir / "gt" / f"{tag}_shaded.f32", "<f4", 4, gt_width, gt_height)
+
+            Image.fromarray(to_u8(input_shaded[:, :, :3], "linear")).save(out_dir / f"{tag}_shaded_input.png")
+            Image.fromarray(to_u8(gt_shaded[:, :, :3], "linear")).save(out_dir / f"{tag}_shaded_reference.png")
 
         # 2. The coverage comparison, band by band, with captions:
         #    top    - the undersampled input coverage (grayscale),
@@ -113,27 +117,31 @@ def main():
         #    bottom - the GT after deferred shading (the "Reference" look).
         gt_coverage_small = np.array(grayscale(gt_coverage[:, :, 0], "linear")
                                      .resize((width, height), Image.BOX))
-        gt_shaded_small = np.array(Image.fromarray(to_u8(gt_shaded[:, :, :3], "linear"))
-                                   .resize((width, height), Image.BOX))
 
         bands = Image.new("RGB", (width, 3 * height), "black")
         bands.paste(grayscale(input_coverage[:, :, 0], "linear"), (0, 0))
         bands.paste(Image.fromarray(gt_coverage_small), (0, height))
-        bands.paste(Image.fromarray(gt_shaded_small), (0, 2 * height))
 
-        comparison = labeled(bands, f"{tag}: input coverage (1 spp, broken) | "
-                                    f"GT coverage ({ssaa}x SSAA, converged) | "
-                                    f"GT shaded reference")
+        caption = f"{tag}: input coverage (1 spp, broken) | GT coverage ({ssaa}x SSAA, converged)"
+
+        if input_shaded_path.exists():
+            gt_shaded_small = np.array(Image.fromarray(to_u8(gt_shaded[:, :, :3], "linear"))
+                                       .resize((width, height), Image.BOX))
+            bands.paste(Image.fromarray(gt_shaded_small), (0, 2 * height))
+            caption += " | GT shaded reference"
+
+        comparison = labeled(bands, caption)
         comparison.save(out_dir / f"{tag}_coverage_comparison.png")
 
         # 3. Tangent visualization (world-space, canonical orientation).
         channel_grid(input_tangent[:, :, :3], "linear").save(
             out_dir / f"{tag}_tangent_channels.png")
 
-        # 4. Depth + background.
+        # 4. Depth (+ background, when present).
         channel_grid(input_depth, "auto").save(out_dir / f"{tag}_depth.png")
-        Image.fromarray(to_u8(input_background[:, :, :3], "linear")).save(
-            out_dir / f"{tag}_background.png")
+        if input_shaded_path.exists():
+            Image.fromarray(to_u8(input_background[:, :, :3], "linear")).save(
+                out_dir / f"{tag}_background.png")
 
         # 5. Motion vectors (if present).
         motion_path = dump_dir / "input" / f"{tag}_motion.f16"

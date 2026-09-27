@@ -32,9 +32,9 @@ OUT = REPO / "dumps" / "dataset"
 STYLES = {
     "ponytail":  {"scene": "ponytail.vkhr",  "distance": (2.5, 5.0), "radius": (0.25, 0.60)},
     "bear":      {"scene": "bear.vkhr",      "distance": (2.0, 4.0), "radius": (0.30, 0.70)},
-    "wstraight": {"scene": "wstraight.vkhr", "distance": (1.5, 3.5), "radius": (0.50, 1.20)},
-    "wwavy":     {"scene": "wwavy.vkhr",     "distance": (1.5, 3.5), "radius": (0.50, 1.20)},
-    "wcurly":    {"scene": "wcurly.vkhr",    "distance": (1.5, 3.5), "radius": (0.50, 1.20)},
+    "wstraight": {"scene": "wstraight.vkhr", "distance": (1.2, 2.5), "radius": (1.50, 3.00)},
+    "wwavy":     {"scene": "wwavy.vkhr",     "distance": (1.2, 2.5), "radius": (1.50, 3.00)},
+    "wcurly":    {"scene": "wcurly.vkhr",    "distance": (1.2, 2.5), "radius": (1.50, 3.00)},
 }
 
 

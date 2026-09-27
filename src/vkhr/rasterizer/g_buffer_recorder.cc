@@ -577,6 +577,28 @@ namespace vkhr {
                 camera.set_look_at_point(orbit_look_at);
                 camera.set_position(orbit_look_at + glm::vec3 { rotation * glm::vec4 { orbit_offset, 1.0f } });
             }
+
+            if (config.camera_script == "random") {
+                // Deterministic per frame: seed + frame index, so a run can
+                // be resumed / extended without reshuffling other frames.
+                std::mt19937 generator { config.camera_seed * 100003u + frame_index };
+
+                std::uniform_real_distribution<float> azimuth { 0.0f, 2.0f * Pi };
+                std::uniform_real_distribution<float> elevation { glm::radians(config.elevation_min),
+                                                                 glm::radians(config.elevation_max) };
+                std::uniform_real_distribution<float> distance { config.distance_min, config.distance_max };
+
+                float az = azimuth(generator);
+                float el = elevation(generator);
+                float d  = distance(generator) * volume_radius;
+
+                glm::vec3 direction { glm::cos(el) * glm::cos(az),
+                                      glm::sin(el),
+                                      glm::cos(el) * glm::sin(az) };
+
+                camera.set_look_at_point(volume_center);
+                camera.set_position(volume_center + direction * d);
+            }
         }
 
         void GBufferRecorder::update_camera_buffers() {
@@ -927,11 +949,28 @@ namespace vkhr {
             std::filesystem::create_directories(config.output_directory + "/input");
             std::filesystem::create_directories(config.output_directory + "/gt");
 
+            // The random camera script frames the hair's bounding volume.
+            const AABB& bounds = renderer.hair_styles.begin()->second.parameters.volume_bounds;
+            volume_center = bounds.origin + bounds.size / 2.0f;
+            volume_radius = glm::length(bounds.size) / 2.0f;
+
             write_meta(false); // mark the dump as in-progress.
 
             previous_transform = current_transform = scene_graph.get_camera().get_transform();
 
             for (unsigned frame { 0 }; frame < config.frame_count; ++frame) {
+                if (config.radius_max > config.radius_min && config.radius_min > 0.0f) {
+                    std::mt19937 radius_generator { config.camera_seed * 7919u + frame };
+                    std::uniform_real_distribution<float> radius { config.radius_min, config.radius_max };
+
+                    float strand_radius = radius(radius_generator);
+                    for (auto& hair_node : scene_graph.get_nodes_with_hair_styles())
+                        for (auto& hair_style : hair_node->get_hair_styles()) {
+                            renderer.hair_styles[hair_style].parameters.strand_radius = strand_radius;
+                            renderer.hair_styles[hair_style].update_parameters();
+                        }
+                }
+
                 if (config.random_light) {
                     std::mt19937 light_generator { config.camera_seed * 15485u + frame };
 
