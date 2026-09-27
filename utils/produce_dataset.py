@@ -38,9 +38,10 @@ STYLES = {
 }
 
 
-def run_dump(style: str, split: str, frames: int, seed: int, shaded: bool) -> bool:
+def run_dump(style: str, split: str, frames: int, seed: int, shaded: bool,
+             ssaa: int, out_root: Path) -> bool:
     info = STYLES[style]
-    out_dir = OUT / f"{style}_{split}"
+    out_dir = out_root / f"{style}_{split}"
 
     meta_path = out_dir / "meta.json"
     if meta_path.exists():
@@ -56,7 +57,7 @@ def run_dump(style: str, split: str, frames: int, seed: int, shaded: bool) -> bo
         "--dump", "yes",
         "--dump-dir", str(out_dir),
         "--dump-frames", str(frames),
-        "--dump-ssaa", "2",
+        "--dump-ssaa", str(ssaa),
         "--camera-script", "random",
         "--camera-seed", str(seed),
         "--distance-min", str(distance[0]),
@@ -96,6 +97,8 @@ def main():
     parser.add_argument("--train-frames", type=int, default=None)
     parser.add_argument("--eval-frames", type=int, default=None)
     parser.add_argument("--seed-base", type=int, default=1000)
+    parser.add_argument("--ssaa", type=int, default=4, help="GT supersampling per axis")
+    parser.add_argument("--out-root", default=str(OUT))
     options = parser.parse_args()
 
     if options.pilot:
@@ -113,14 +116,18 @@ def main():
             print(f"unknown style: {style}, choose from {list(STYLES)}")
             sys.exit(1)
 
+        out_root = Path(options.out_root)
+
         # Training split: G-buffer channels only (network supervision).
-        if run_dump(style, "train", train_frames, options.seed_base, shaded=False):
+        if run_dump(style, "train", train_frames, options.seed_base, shaded=False,
+                    ssaa=options.ssaa, out_root=out_root):
             total_frames += train_frames
         else:
             failures.append(f"{style}_train")
 
         # Evaluation split: full channels incl. shaded input/reference.
-        if run_dump(style, "eval", eval_frames, options.seed_base + 500, shaded=True):
+        if run_dump(style, "eval", eval_frames, options.seed_base + 500, shaded=True,
+                    ssaa=options.ssaa, out_root=out_root):
             total_frames += eval_frames
         else:
             failures.append(f"{style}_eval")
