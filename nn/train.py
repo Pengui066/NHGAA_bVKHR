@@ -53,7 +53,7 @@ def main():
     parser.add_argument("--warmup", type=int, default=500)
     parser.add_argument("--val-every", type=int, default=1000)
     parser.add_argument("--log-every", type=int, default=100)
-    parser.add_argument("--checkpoint-every", type=int, default=5000)
+    parser.add_argument("--checkpoint-every", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--val-batches", type=int, default=20)
     parser.add_argument("--resume", action="store_true",
@@ -92,18 +92,30 @@ def main():
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_scale)
 
     start_step = 0
-    if options.resume and (out_dir / "checkpoint.pt").exists():
-        state = torch.load(out_dir / "checkpoint.pt", map_location=device, weights_only=False)
-        model.load_state_dict(state["model"])
-        if "optimizer" in state:
-            optimizer.load_state_dict(state["optimizer"])
-            print("optimizer state restored")
-        else:
-            print("checkpoint has no optimizer state - Adam moments restart fresh")
-        start_step = state["step"]
-        for _ in range(start_step):
-            scheduler.step()
-        print(f"resumed from step {start_step}")
+    if options.resume:
+        # Resume from the newest of checkpoint.pt / best.pt (a crash right
+        # after a val improvement can leave best.pt ahead of checkpoint.pt).
+        candidates = [p for p in (out_dir / "checkpoint.pt", out_dir / "best.pt")
+                      if p.exists()]
+        if candidates:
+            def resume_step(path: Path) -> int:
+                try:
+                    return torch.load(path, map_location=device, weights_only=False).get("step", 0)
+                except Exception as error:
+                    print(f"cannot read {path.name}: {error}")
+                    return -1
+            newest = max(candidates, key=resume_step)
+            state = torch.load(newest, map_location=device, weights_only=False)
+            model.load_state_dict(state["model"])
+            if "optimizer" in state:
+                optimizer.load_state_dict(state["optimizer"])
+                print("optimizer state restored")
+            else:
+                print("checkpoint has no optimizer state - Adam moments restart fresh")
+            start_step = state.get("step", 0)
+            for _ in range(start_step):
+                scheduler.step()
+            print(f"resumed from {newest.name} at step {start_step}")
 
     csv_path = out_dir / "log.csv"
     with open(csv_path, "w", newline="") as handle:
