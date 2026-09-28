@@ -106,6 +106,10 @@ def process_frame(args):
     def load(sub: str, suffix: str, dtype: str, channels: int, w: int, h: int):
         path = dump_dir / sub / f"{tag}{suffix}"
         data = np.fromfile(path, dtype=dtype).astype(np.float32)
+        # Some hair files carry zero-length tangents at strand tips: the
+        # old dumps wrote NaN/Inf there. Zero them out defensively.
+        data[np.isnan(data)] = 0.0
+        data[np.isinf(data)] = 0.0
         return data.reshape(h, w, channels)
 
     # Undersampled input.

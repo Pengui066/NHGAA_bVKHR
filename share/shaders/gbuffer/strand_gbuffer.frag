@@ -49,7 +49,12 @@ void main() {
     // Canonical orientation: sign-align the tangent towards the viewer
     // (a strand tangent is direction-ambiguous, T = -T). This keeps the
     // G-buffer and the ground-truth averages from cancelling out.
-    vec3 tangent = normalize(fs_in.tangent);
+    vec3 tangent = fs_in.tangent;
+    float tangent_length = length(tangent);
+
+    if (tangent_length > 1e-6f)
+        tangent = tangent / tangent_length; // zero-length tangents (hair tips) stay zero.
+
     vec3 view_direction = normalize(camera.position - fs_in.position.xyz);
 
     if (dot(tangent, view_direction) < 0.0f)

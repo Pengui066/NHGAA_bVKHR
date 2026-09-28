@@ -18,11 +18,12 @@ class HairGBufferDataset(Dataset):
 
     def __init__(self, prepared_root: str | Path, split: str = "train",
                  patch_size: int | None = 512, frames_per_item: int = 1,
-                 val_stride: int = 16):
+                 val_stride: int = 16, preload: bool = False):
         self.root = Path(prepared_root)
         self.patch_size = patch_size
         self.split = split
         self.samples = []
+        self.cache: dict = {}
 
         for run_dir in sorted(p for p in self.root.iterdir()
                               if p.is_dir() and p.name.endswith(f"_{split}")):
@@ -34,6 +35,27 @@ class HairGBufferDataset(Dataset):
                 frames = [f for i, f in enumerate(frames) if i % val_stride != 0]
             for frame in frames:
                 self.samples.append((style, frame, frames_per_item))
+
+        if preload:
+            # Preload the training channels into RAM as float16 (~16 MB per
+            # 720p frame). This removes the DataLoader worker processes
+            # entirely - their shared-memory IPC kept exhausting the Windows
+            # page file - and makes crops pure memory reads.
+            for i, (style, frame, _) in enumerate(self.samples):
+                data = self._load(frame)
+                self.cache[frame] = {
+                    "input": np.concatenate([data["input/coverage"],
+                                             data["input/tangent"]], axis=-1).astype(np.float16),
+                    "gt_coverage": data["gt/coverage"].astype(np.float16),
+                    "gt_tangent": data["gt/tangent"].astype(np.float16),
+                    "gt_mask": data["gt/hair_mask"].astype(np.float16),
+                }
+                if (i + 1) % 100 == 0:
+                    print(f"preloaded {i + 1} / {len(self.samples)} frames into RAM", flush=True)
+            cache_gb = sum(a["input"].nbytes + a["gt_coverage"].nbytes
+                           + a["gt_tangent"].nbytes + a["gt_mask"].nbytes
+                           for a in self.cache.values()) / 1e9
+            print(f"RAM cache: {cache_gb:.1f} GB over {len(self.cache)} frames", flush=True)
 
     def __len__(self) -> int:
         return sum(count for _, _, count in self.samples)
@@ -55,12 +77,19 @@ class HairGBufferDataset(Dataset):
                 break
             index -= count
 
-        data = self._load(frame)
-        x = np.concatenate([data["input/coverage"],
-                            data["input/tangent"]], axis=-1)  # (H, W, 4)
-        y_coverage = data["gt/coverage"]
-        y_tangent = data["gt/tangent"]
-        y_mask = data["gt/hair_mask"]
+        if frame in self.cache:
+            data = self.cache[frame]
+            x = data["input"]                     # already [C, T] concatenated
+            y_coverage = data["gt_coverage"]
+            y_tangent = data["gt_tangent"]
+            y_mask = data["gt_mask"]
+        else:
+            data = self._load(frame)
+            x = np.concatenate([data["input/coverage"],
+                                data["input/tangent"]], axis=-1)  # (H, W, 4)
+            y_coverage = data["gt/coverage"]
+            y_tangent = data["gt/tangent"]
+            y_mask = data["gt/hair_mask"]
 
         h, w = x.shape[:2]
         ps = self.patch_size
