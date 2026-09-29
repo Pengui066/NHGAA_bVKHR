@@ -160,3 +160,7 @@ docs/
 dumps/
 
 *.log
+
+__pycache__/
+*.pyc
+runs/

@@ -66,6 +66,28 @@ def channel_grid(image: np.ndarray, mode: str) -> Image.Image:
     return Image.fromarray(np.concatenate([top, bottom], axis=0))
 
 
+def tangent_rgb(tangent: np.ndarray, coverage: np.ndarray) -> Image.Image:
+    """Paper-style tangent display: R/X, G/Y, B/Z with t -> 0.5*t + 0.5,
+    drawn on hair pixels only (background stays black)."""
+    t = np.nan_to_num(tangent[:, :, :3], nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+    rgb = t * 0.5 + 0.5
+    rgb *= (coverage[:, :, 0] > 0)[:, :, None]
+    return Image.fromarray((np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8))
+
+
+def tonemap_pair(a: np.ndarray, b: np.ndarray):
+    """Tonemaps two images against a SHARED percentile range so their
+    brightness/contrast can be compared directly."""
+    a = np.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)
+    b = np.nan_to_num(b, nan=0.0, posinf=0.0, neginf=0.0)
+    lo, hi = np.percentile(np.concatenate([a.ravel(), b.ravel()]), [1.0, 99.5])
+    if hi <= lo:
+        hi = lo + 1e-6
+    stretch = lambda x: Image.fromarray(
+        (np.clip((x - lo) / (hi - lo), 0, 1) * 255).astype(np.uint8))
+    return stretch(a), stretch(b)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -133,12 +155,31 @@ def main():
         comparison = labeled(bands, caption)
         comparison.save(out_dir / f"{tag}_coverage_comparison.png")
 
-        # 3. Tangent visualization (world-space, canonical orientation).
-        channel_grid(input_tangent[:, :, :3], "linear").save(
-            out_dir / f"{tag}_tangent_channels.png")
+        # 3. Tangent: paper-style single RGB image, plus an input-vs-GT
+        # comparison with the GT resampled to the input display scale.
+        gt_tangent = load_raw(dump_dir / "gt" / f"{tag}_tangent.f16", "<f2", 4, gt_width, gt_height)
 
-        # 4. Depth (+ background, when present).
+        input_tangent_rgb = tangent_rgb(input_tangent, input_coverage)
+        input_tangent_rgb.save(out_dir / f"{tag}_tangent_rgb.png")
+
+        gt_tangent_small = tangent_rgb(gt_tangent, gt_coverage).resize((width, height), Image.BOX)
+        bands = Image.new("RGB", (width, 2 * height), "black")
+        bands.paste(input_tangent_rgb, (0, 0))
+        bands.paste(gt_tangent_small, (0, height))
+        labeled(bands, f"{tag}: input tangent (1 spp) | GT tangent ({ssaa}x SSAA)").save(
+            out_dir / f"{tag}_tangent_comparison.png")
+
+        # 4. Depth: single view, plus an input-vs-GT comparison stretched to
+        # a shared range (so both bands are directly comparable).
+        gt_depth = load_raw(dump_dir / "gt" / f"{tag}_depth.f32", "<f4", 1, gt_width, gt_height)
         channel_grid(input_depth, "auto").save(out_dir / f"{tag}_depth.png")
+
+        input_depth_img, gt_depth_img = tonemap_pair(input_depth[:, :, 0], gt_depth[:, :, 0])
+        bands = Image.new("RGB", (width, 2 * height), "black")
+        bands.paste(input_depth_img, (0, 0))
+        bands.paste(gt_depth_img.resize((width, height), Image.BOX), (0, height))
+        labeled(bands, f"{tag}: input depth (1 spp) | GT depth ({ssaa}x SSAA)").save(
+            out_dir / f"{tag}_depth_comparison.png")
         if input_shaded_path.exists():
             Image.fromarray(to_u8(input_background[:, :, :3], "linear")).save(
                 out_dir / f"{tag}_background.png")
