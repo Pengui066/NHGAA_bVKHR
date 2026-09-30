@@ -1,6 +1,8 @@
 #include <vkhr/rasterizer.hh>
 
 #include <ctime>
+#include <fstream>
+#include <iostream>
 #include <cstring>
 #include <filesystem>
 #include <sstream>
@@ -477,6 +479,23 @@ namespace vkhr {
 
         vulkan::GBufferRecorder recorder { *this, config };
         recorder.dump(scene_graph);
+    }
+
+    void Rasterizer::shade_dump(SceneGraph& scene_graph, const ShadeDumpOptions& options) {
+        device.wait_idle();
+
+        imgui.make_current_renderer(Renderer::Type::Rasterizer);
+
+        std::ifstream meta_file { options.dump_directory + "/meta.json" };
+        std::string meta_text { std::istreambuf_iterator<char>(meta_file),
+                                std::istreambuf_iterator<char>() };
+        auto meta = json::parse(meta_text);
+        std::cerr << "[shade] meta_text len: " << meta_text.size()
+                  << " | parsed dump len: " << meta.dump().size()
+                  << " | parsed dump head: " << meta.dump().substr(0, 40) << std::endl;
+
+        vulkan::ShadeDump shad { *this, scene_graph, options, meta };
+        shad.run();
     }
 
     bool Rasterizer::swapchain_is_dirty() const {

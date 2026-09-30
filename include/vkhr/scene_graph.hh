@@ -19,7 +19,7 @@ using json = nlohmann::json;
 #include <vector>
 
 namespace vkhr {
-    namespace vulkan { class GBufferRecorder; }
+    namespace vulkan { class GBufferRecorder; class ShadeDump; }
     class Interface;
     class SceneGraph final {
     public:
@@ -200,6 +200,7 @@ namespace vkhr {
 
         friend class vkhr::Interface;
         friend class vkhr::vulkan::GBufferRecorder;
+        friend class vkhr::vulkan::ShadeDump;
     };
 }
 

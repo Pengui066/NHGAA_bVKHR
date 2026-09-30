@@ -79,6 +79,7 @@ namespace vkhr {
 
             friend class Volume;
             friend class GBufferRecorder;
+            friend class ShadeDump;
 
             static int id;
         };

@@ -192,5 +192,9 @@ namespace vkhr {
         { "radius-max",    Argument::Type::Floating, Argument::make_floating(-1.0f), "" },
         { "dump-shaded",   Argument::Type::Boolean,  Argument::make_boolean(true),   "" },
         { "light-random",  Argument::Type::Boolean,  Argument::make_boolean(false),  "" },
+        { "shade",         Argument::Type::Boolean,  Argument::make_boolean(false),  "" },
+        { "shade-dir",     Argument::Type::String,   Argument::make_string("dumps"),  "" },
+        { "shade-source",  Argument::Type::String,   Argument::make_string("recon"),  "" },
+        { "shade-out",     Argument::Type::String,   Argument::make_string(""),       "" },
     };
 }

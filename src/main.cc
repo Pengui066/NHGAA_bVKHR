@@ -10,6 +10,7 @@
 #include <vkhr/ray_tracer.hh>
 
 #include <glm/glm.hpp>
+#include <iostream>
 
 #ifdef DEBUG
 #ifdef WINDOWS
@@ -107,6 +108,24 @@ int main(int argc, char** argv) {
         config.random_light     = argp["light-random"].value.boolean == 1;
 
         rasterizer.dump_gbuffer(scene_graph, config);
+        window.close();
+        return 0;
+    }
+
+    // Offline shading of dumped G-buffer channel files (recon/input).
+    std::cerr << "[trace] shade flag = " << argp["shade"].value.boolean << std::endl;
+    if (argp["shade"].value.boolean == 1) {
+        std::cerr << "[trace] entering shade branch" << std::endl;
+        vkhr::ShadeDumpOptions options;
+        options.dump_directory = argp["shade-dir"].value.string;
+        options.source         = argp["shade-source"].value.string;
+        options.output_file    = argp["shade-out"].value.string;
+
+        try {
+            rasterizer.shade_dump(scene_graph, options);
+        } catch (const std::exception& error) {
+            std::cerr << "[shade exception] " << error.what() << std::endl;
+        }
         window.close();
         return 0;
     }
