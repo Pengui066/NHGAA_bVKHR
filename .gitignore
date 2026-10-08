@@ -164,3 +164,6 @@ dumps/
 __pycache__/
 *.pyc
 runs/
+
+check/
+shade_log*
