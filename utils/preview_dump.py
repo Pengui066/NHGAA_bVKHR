@@ -2,8 +2,9 @@
 """Preview a vkhr G-buffer dump: converts the raw channel files into
 PNG images for quick visual inspection.
 
-Usage: python utils/preview_dump.py dumps/test
+Usage: python utils/preview_dump.py dumps/test [--seam-free]
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -66,11 +67,31 @@ def channel_grid(image: np.ndarray, mode: str) -> Image.Image:
     return Image.fromarray(np.concatenate([top, bottom], axis=0))
 
 
-def tangent_rgb(tangent: np.ndarray, coverage: np.ndarray) -> Image.Image:
-    """Paper-style tangent display: R/X, G/Y, B/Z with t -> 0.5*t + 0.5,
-    drawn on hair pixels only (background stays black)."""
+def tangent_rgb(tangent: np.ndarray, coverage: np.ndarray,
+                seam_free: bool = False) -> Image.Image:
+    """Paper-style tangent display: R/X, G/Y, B/Z, drawn on hair pixels
+    only (background stays black).
+
+    Default encoding is t -> 0.5*t + 0.5. The stored tangent sign is
+    camera-aligned, which flips whole strand bundles where they run
+    perpendicular to the view direction (e.g. a hanging ponytail) and
+    shows up as a hard hue seam between t and -t.
+
+    seam_free=True switches to the sign-invariant encoding rgb = |t|:
+    a strand tangent satisfies t == -t, so the sign carries no
+    displayable information and component magnitudes are the honest
+    seam-free image. Per-pixel sign re-orientation does NOT work — any
+    per-pixel sign convention is discontinuous somewhere on the sphere
+    of directions and merely moves the seam (observed: it reappears on
+    dominant-axis boundaries). Trade-off: |t| identifies directions that
+    differ by mirroring one component, which are distinct lines; for a
+    preview this is far less misleading than fake sign seams. Display
+    only — the dump's stored convention is untouched.
+    """
     t = np.nan_to_num(tangent[:, :, :3], nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-    rgb = t * 0.5 + 0.5
+    if seam_free:
+        t = np.abs(t)
+    rgb = t if seam_free else t * 0.5 + 0.5
     rgb *= (coverage[:, :, 0] > 0)[:, :, None]
     return Image.fromarray((np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8))
 
@@ -89,11 +110,16 @@ def tonemap_pair(a: np.ndarray, b: np.ndarray):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Convert a vkhr G-buffer dump into preview PNGs.")
+    parser.add_argument("dump_dir", type=Path, help="e.g. dumps/dataset_full/ponytail_eval")
+    parser.add_argument("--seam-free", action="store_true",
+                        help="re-orient tangent colors so the camera-alignment "
+                             "sign flip does not show as a hue seam (display only)")
+    args = parser.parse_args()
+    seam_free = args.seam_free
 
-    dump_dir = Path(sys.argv[1])
+    dump_dir = args.dump_dir
     meta = json.loads((dump_dir / "meta.json").read_text())
 
     if not meta.get("complete", True):
@@ -159,14 +185,15 @@ def main():
         # comparison with the GT resampled to the input display scale.
         gt_tangent = load_raw(dump_dir / "gt" / f"{tag}_tangent.f16", "<f2", 4, gt_width, gt_height)
 
-        input_tangent_rgb = tangent_rgb(input_tangent, input_coverage)
+        input_tangent_rgb = tangent_rgb(input_tangent, input_coverage, seam_free)
         input_tangent_rgb.save(out_dir / f"{tag}_tangent_rgb.png")
 
-        gt_tangent_small = tangent_rgb(gt_tangent, gt_coverage).resize((width, height), Image.BOX)
+        gt_tangent_small = tangent_rgb(gt_tangent, gt_coverage, seam_free).resize((width, height), Image.BOX)
         bands = Image.new("RGB", (width, 2 * height), "black")
         bands.paste(input_tangent_rgb, (0, 0))
         bands.paste(gt_tangent_small, (0, height))
-        labeled(bands, f"{tag}: input tangent (1 spp) | GT tangent ({ssaa}x SSAA)").save(
+        orientation = "sign-invariant |t| display" if seam_free else "camera-aligned sign"
+        labeled(bands, f"{tag}: input tangent (1 spp) | GT tangent ({ssaa}x SSAA), {orientation}").save(
             out_dir / f"{tag}_tangent_comparison.png")
 
         # 4. Depth: single view, plus an input-vs-GT comparison stretched to
