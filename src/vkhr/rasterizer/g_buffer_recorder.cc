@@ -959,11 +959,18 @@ namespace vkhr {
             previous_transform = current_transform = scene_graph.get_camera().get_transform();
 
             for (unsigned frame { 0 }; frame < config.frame_count; ++frame) {
+                // Per-frame runtime state recorded in meta.json, so the
+                // offline --shade mode can reproduce each frame exactly.
+                float frame_radius = renderer.hair_styles.begin()->second.parameters.strand_radius;
+                float frame_light_azimuth = 0.0f;
+                float frame_light_elevation = glm::radians(45.0f); // static-light default
+
                 if (config.radius_max > config.radius_min && config.radius_min > 0.0f) {
                     std::mt19937 radius_generator { config.camera_seed * 7919u + frame };
                     std::uniform_real_distribution<float> radius { config.radius_min, config.radius_max };
 
                     float strand_radius = radius(radius_generator);
+                    frame_radius = strand_radius;
                     for (auto& hair_node : scene_graph.get_nodes_with_hair_styles())
                         for (auto& hair_style : hair_node->get_hair_styles()) {
                             renderer.hair_styles[hair_style].parameters.strand_radius = strand_radius;
@@ -978,8 +985,11 @@ namespace vkhr {
                     std::uniform_real_distribution<float> elevation { glm::radians(-30.0f),
                                                                       glm::radians(+60.0f) };
 
-                    float az = azimuth(light_generator);
-                    float el = elevation(light_generator);
+                    frame_light_azimuth = azimuth(light_generator);
+                    frame_light_elevation = elevation(light_generator);
+
+                    float az = frame_light_azimuth;
+                    float el = frame_light_elevation;
 
                     glm::vec3 direction { glm::cos(el) * glm::cos(az),
                                           glm::sin(el),
@@ -1010,7 +1020,10 @@ namespace vkhr {
                     { "camera_position", { current_transform.position.x,
                                            current_transform.position.y,
                                            current_transform.position.z } },
-                    { "resolution", { input_target.width, input_target.height } }
+                    { "resolution", { input_target.width, input_target.height } },
+                    { "strand_radius", frame_radius },
+                    { "light_azimuth_rad", frame_light_azimuth },
+                    { "light_elevation_rad", frame_light_elevation }
                 };
 
                 write_json_matrix(frame_data["view"], current_transform.view);
