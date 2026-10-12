@@ -165,5 +165,4 @@ __pycache__/
 *.pyc
 runs/
 
-check/
 shade_log*
