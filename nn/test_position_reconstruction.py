@@ -18,6 +18,12 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+
+# The conda env's MKL numpy and the pip-installed torch each bundle their own
+# libiomp5md.dll; without this the process aborts at OpenMP init (OMP Error #15).
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import argparse
 import json
 from pathlib import Path
@@ -82,7 +88,7 @@ def main():
     model.load_state_dict(state["model"])
     model.eval()
 
-    dataset = ValDataset(options.data, split="train")
+    dataset = ValDataset(options.data, split="eval", val_stride=1)
     picks = list(range(0, len(dataset), options.stride))[: options.frames * 5]
 
     results = {"oracle": [], "psi": []}

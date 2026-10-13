@@ -19,6 +19,12 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+
+# The conda env's MKL numpy and the pip-installed torch each bundle their own
+# libiomp5md.dll; without this the process aborts at OpenMP init (OMP Error #15).
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import argparse
 from pathlib import Path
 
@@ -96,7 +102,11 @@ def main():
 
         # Hybrid position: real sample / analytic / naive, in that order.
         position = result["position"]
-        naive_target = np.ones_like(in_coverage, dtype=bool)
+        # Naive nearest-valid copy only where the reconstruction found NO
+        # evidence (not input-valid, not repaired, not vote-filled); an
+        # all-True target would discard the analytic positions entirely.
+        naive_target = ~((in_coverage > 0.0) | result["has_repair"]
+                         | result["has_vote"])
         position = naive_fill(in_coverage, position, naive_target)
 
         # Project to hardware depth for the shading pass.

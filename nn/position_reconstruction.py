@@ -46,14 +46,14 @@ def project_to_pixels(points: np.ndarray, view: np.ndarray,
     clip = clip @ (projection @ view).T
     ndc = clip[..., :3] / clip[..., 3:4]
     return np.stack([(ndc[..., 0] + 1.0) * 0.5 * width,
-                     (1.0 - ndc[..., 1]) * 0.5 * height], axis=-1)
+                     (ndc[..., 1] + 1.0) * 0.5 * height], axis=-1)
 
 
 def unproject_pixels(px: np.ndarray, py: np.ndarray, depth: np.ndarray,
                      view: np.ndarray, projection: np.ndarray,
                      width: int, height: int) -> np.ndarray:
     ndc_x = 2.0 * px / width - 1.0
-    ndc_y = 1.0 - 2.0 * py / height
+    ndc_y = 2.0 * py / height - 1.0
     clip = np.stack([ndc_x, ndc_y, depth, np.ones_like(depth)], axis=-1)
     world = clip @ np.linalg.inv(projection @ view).T
     return world[..., :3] / world[..., 3:4]
@@ -249,9 +249,9 @@ def reconstruct_positions(coverage_pred: np.ndarray, tangent_pred: np.ndarray,
             candidate = neighbor_has & newly
             if not candidate.any():
                 continue
-            neighbor_center = np.stack([_shift(centers[..., 0], dy, dx, np.nan),
-                                        _shift(centers[..., 1], dy, dx, np.nan)], axis=-1)
-            dist = ((neighbor_center - centers) ** 2).sum(-1)
+            neighbor_xy = np.stack([_shift(xs, dy, dx, np.nan),
+                                        _shift(ys, dy, dx, np.nan)], axis=-1)
+            dist = ((neighbor_xy - centers) ** 2).sum(-1)
             source_vz = view_space_z(
                 np.stack([_shift(current[..., 0], dy, dx, 0.0),
                           _shift(current[..., 1], dy, dx, 0.0),
@@ -287,7 +287,7 @@ def reconstruct_positions(coverage_pred: np.ndarray, tangent_pred: np.ndarray,
     # Stage V: forward voting (eqs. 13-15). Each valid pixel votes along
     # its own tangent; votes are accepted for both tangent signs.
     vote_position = np.zeros((height, width, 3, 8), dtype=np.float32)
-    all_vote_vz = np.full((height, width, 8), np.inf, dtype=np.float64)
+    all_vote_vz = np.full((height, width, 8), -np.inf, dtype=np.float64)
     for slot, (dy, dx) in enumerate(offsets):
         source_valid = _shift(valid.astype(np.float32), dy, dx, 0.0) > 0.5
         source_pos = np.stack([_shift(position_valid[..., 0], dy, dx, 0.0),
@@ -314,13 +314,13 @@ def reconstruct_positions(coverage_pred: np.ndarray, tangent_pred: np.ndarray,
         # Alignment gate for both tangent signs + the depth guard.
         accepted = (source_valid & hair & (np.abs(alignment) >= COS_THETA_MAX)
                     & (np.abs(vote_vz - target_vz) <= depth_tolerance))
-        vote_vz_slot = np.where(accepted, vote_vz, np.inf)
+        vote_vz_slot = np.where(accepted, vote_vz, -np.inf)
         for ch in range(3):
             vote_position[..., ch, slot] = np.where(accepted, vote[..., ch], 0.0)
         all_vote_vz[..., slot] = vote_vz_slot
 
     has_vote = np.isfinite(all_vote_vz).any(axis=-1)
-    best_slot = np.argmin(all_vote_vz, axis=-1)   # frontmost: min view z
+    best_slot = np.argmax(all_vote_vz, axis=-1)   # frontmost: max view z (camera looks down -z)
     frontmost = np.take_along_axis(vote_position, best_slot[..., None, None], axis=-1)[..., 0]
 
     # Composition: valid keeps its real sample; invalid takes backward

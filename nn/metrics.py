@@ -15,6 +15,12 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+
+# The conda env's MKL numpy and the pip-installed torch each bundle their own
+# libiomp5md.dll; without this the process aborts at OpenMP init (OMP Error #15).
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import argparse
 import json
 from pathlib import Path
