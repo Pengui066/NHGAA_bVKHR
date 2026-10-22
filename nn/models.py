@@ -55,12 +55,16 @@ class WindowAttention(nn.Module):
     cyclic shift, GroupNorm pre-normalization and 1x1 conv projections."""
 
     def __init__(self, channels: int, heads: int = 4, window_size: int = 8,
-                 shifted: bool = False):
+                 shifted: bool = False, attn_impl: str = "sdpa"):
         super().__init__()
         self.channels = channels
         self.heads = heads
         self.window_size = window_size
         self.shifted = shifted
+        # "sdpa" uses the fused scaled_dot_product_attention backend (training
+        # default); "matmul" is the explicit formulation used for ONNX export,
+        # which cannot trace through the fused op.
+        self.attn_impl = attn_impl
 
         self.norm = nn.GroupNorm(num_groups=min(32, channels), num_channels=channels)
         self.qkv = nn.Conv2d(channels, channels * 3, 1, bias=True)
@@ -95,7 +99,13 @@ class WindowAttention(nn.Module):
         k = k.permute(0, 1, 3, 5, 4, 6, 2).reshape(b, self.heads, -1, ws * ws, c // self.heads)
         v = v.permute(0, 1, 3, 5, 4, 6, 2).reshape(b, self.heads, -1, ws * ws, c // self.heads)
 
-        out = F.scaled_dot_product_attention(q, k, v)  # flash/mem-efficient
+        if self.attn_impl == "matmul":
+            scale = (c // self.heads) ** -0.5
+            attn = (q @ k.transpose(-2, -1)) * scale
+            attn = attn.softmax(dim=-1)
+            out = attn @ v
+        else:
+            out = F.scaled_dot_product_attention(q, k, v)  # flash/mem-efficient
         out = out.reshape(b, self.heads, hp // ws, wp // ws, ws, ws, c // self.heads)
         out = out.permute(0, 1, 6, 2, 4, 3, 5).reshape(b, c, hp, wp)
 
@@ -110,10 +120,13 @@ class AttentionBlock(nn.Module):
     """A regular and a shifted window-attention sub-layer, each followed
     by a feed-forward network (two 1x1 convs, GELU, expansion 2)."""
 
-    def __init__(self, channels: int, heads: int = 4, window_size: int = 8):
+    def __init__(self, channels: int, heads: int = 4, window_size: int = 8,
+                 attn_impl: str = "sdpa"):
         super().__init__()
-        self.attn = WindowAttention(channels, heads, window_size, shifted=False)
-        self.attn_shifted = WindowAttention(channels, heads, window_size, shifted=True)
+        self.attn = WindowAttention(channels, heads, window_size, shifted=False,
+                                    attn_impl=attn_impl)
+        self.attn_shifted = WindowAttention(channels, heads, window_size, shifted=True,
+                                            attn_impl=attn_impl)
         self.norm1 = nn.GroupNorm(min(32, channels), channels)
         self.norm2 = nn.GroupNorm(min(32, channels), channels)
         self.ffn = nn.Sequential(
@@ -174,7 +187,7 @@ class FilteringBranch(nn.Module):
 
 class SpatialNet(nn.Module):
     def __init__(self, base_channels: int = 32, input_channels: int = 4,
-                 output_channels: int = 5):
+                 output_channels: int = 5, attn_impl: str = "sdpa"):
         super().__init__()
         n = base_channels
         self.n = n
@@ -197,7 +210,8 @@ class SpatialNet(nn.Module):
 
         # Bottleneck: 8N at H/4 with residual blocks + window attention.
         self.bottleneck = nn.Sequential(ResBlock(8 * n), ResBlock(8 * n))
-        self.attention = AttentionBlock(8 * n, heads=4, window_size=8)
+        self.attention = AttentionBlock(8 * n, heads=4, window_size=8,
+                                        attn_impl=attn_impl)
 
         # Decoder stage 1 (H/4 -> H/2): bilinear up + 1x1 halving, fused
         # with the concatenated branch skips (2N + 2N).
