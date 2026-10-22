@@ -10,10 +10,25 @@ correspond to hair in the (high-sample) reference. LPIPS on shaded
 images comes later, once the analytic position reconstruction and the
 deferred shading are in the loop.
 
+Two backends share the exact same metric pipeline:
+  - PyTorch (default): loads the checkpoint, runs the model under bf16
+    autocast on CUDA, applies the inference-time postprocess.
+  - ONNX (--use-onnx): runs the exported psi.onnx graph through ONNX
+    Runtime. The graph already contains the postprocess (coverage clamp,
+    tangent renormalization, support gating), so the outputs are the
+    final support-gated [C, T].
+
 Usage:
     python nn/evaluate.py --checkpoint runs/psi_v1/best.pt --data dumps/prepared_full
+    python nn/evaluate.py --use-onnx runs/psi_v1/psi.onnx --out runs/psi_v1/evaluation_onnx
 """
 from __future__ import annotations
+
+import os
+
+# The conda MKL numpy and pip torch ship different libiomp5md.dll copies;
+# without this guard the process aborts at OpenMP init (OMP Error #15).
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import argparse
 import json
@@ -51,19 +66,42 @@ def main():
     parser.add_argument("--checkpoint", default="runs/psi_v1/best.pt")
     parser.add_argument("--data", default="dumps/prepared_full")
     parser.add_argument("--out", default="runs/psi_v1/evaluation")
+    parser.add_argument("--use-onnx", default=None, metavar="PATH",
+                        help="evaluate through the exported ONNX graph instead "
+                             "of the PyTorch model; the graph contains the "
+                             "postprocess, everything downstream is identical")
+    parser.add_argument("--frames", type=int, default=0,
+                        help="limit to the first N held-out frames (0 = all)")
     options = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     out_dir = Path(options.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    model = SpatialNet(base_channels=32).to(device)
-    state = torch.load(options.checkpoint, map_location=device, weights_only=False)
-    model.load_state_dict(state["model"])
-    model.eval()
-    print(f"loaded {options.checkpoint} (step {state.get('step', '?')})")
+    session = None
+    if options.use_onnx:
+        import onnxruntime as ort
+        available = ort.get_available_providers()
+        providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
+                     if "CUDAExecutionProvider" in available
+                     else ["CPUExecutionProvider"])
+        try:
+            session = ort.InferenceSession(options.use_onnx, providers=providers)
+        except Exception as exc:
+            print(f"CUDAExecutionProvider failed ({exc}); falling back to CPU")
+            session = ort.InferenceSession(options.use_onnx,
+                                           providers=["CPUExecutionProvider"])
+        print(f"onnx backend: {session.get_providers()} ({options.use_onnx})")
+    else:
+        model = SpatialNet(base_channels=32).to(device)
+        state = torch.load(options.checkpoint, map_location=device, weights_only=False)
+        model.load_state_dict(state["model"])
+        model.eval()
+        print(f"loaded {options.checkpoint} (step {state.get('step', '?')})")
 
     dataset = ValDataset(options.data, split="train")
+    if options.frames > 0:
+        dataset.samples = dataset.samples[:options.frames]
     print(f"evaluating {len(dataset)} validation frames...")
 
     rows = []
@@ -73,10 +111,18 @@ def main():
             sample = dataset[index]
             batch_input = sample["input"].unsqueeze(0).to(device)
 
-            with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
-                prediction = model(batch_input)
-            pred_coverage, pred_tangent = postprocess(prediction["reconstruction"],
-                                                      prediction["mask_logit"])
+            if session is not None:
+                # The graph already gated/renormalized: outputs 0 and 1 are
+                # the final coverage and tangent (see nn/export_onnx.py).
+                onnx_out = session.run(
+                    None, {"input": np.ascontiguousarray(batch_input.cpu().numpy())})
+                pred_coverage = torch.from_numpy(np.asarray(onnx_out[0]))
+                pred_tangent = torch.from_numpy(np.asarray(onnx_out[1]))
+            else:
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                    prediction = model(batch_input)
+                pred_coverage, pred_tangent = postprocess(prediction["reconstruction"],
+                                                          prediction["mask_logit"])
 
             gt_coverage = sample["gt_coverage"].unsqueeze(0).to(device)
             gt_tangent = sample["gt_tangent"].unsqueeze(0).to(device)
@@ -160,7 +206,9 @@ def main():
         return result
 
     summary = {
+        "backend": "onnx" if session is not None else "pytorch",
         "checkpoint": options.checkpoint,
+        "onnx": options.use_onnx,
         "frames": len(rows),
         "coverage_psnr": {"input": agg("input_coverage_psnr"),
                           "psi": agg("pred_coverage_psnr")},
