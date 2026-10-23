@@ -45,9 +45,10 @@ namespace vkhr {
                       << " | is_object: " << meta.is_object()
                       << " | has input_resolution: " << (meta.find("input_resolution") != meta.end())
                       << " | has frames: " << (meta.find("frames") != meta.end()) << std::endl;
-            auto input_resolution = meta["input_resolution"];
-            width  = input_resolution[0];
-            height = input_resolution[1];
+            bool gt_source = options.source == "gt";
+            auto resolution = gt_source ? meta["gt_resolution"] : meta["input_resolution"];
+            width  = resolution[0];
+            height = resolution[1];
 
             std::cerr << "[shade] ctor: render pass done" << std::endl;
             create_render_pass();
@@ -429,6 +430,8 @@ namespace vkhr {
 
             std::string source_dir = options.dump_directory + "/" + options.source;
             std::string input_dir = options.dump_directory + "/input";
+            std::string background_dir = (options.source == "gt")
+                                       ? options.dump_directory + "/gt" : input_dir;
 
             std::string output_path = options.output_file;
             if (output_path.empty()) {
@@ -471,7 +474,7 @@ namespace vkhr {
                 upload_texture(coverage.image, source_dir + "/" + tag.str() + "_coverage.f16");
                 upload_texture(tangent.image, source_dir + "/" + tag.str() + "_tangent.f16");
                 upload_texture(depth.image, source_dir + "/" + tag.str() + "_depth.f32");
-                upload_texture(background.image, input_dir + "/" + tag.str() + "_background.f32");
+                upload_texture(background.image, background_dir + "/" + tag.str() + "_background.f32");
 
                 auto& descriptor_set = shading_pipeline.descriptor_sets[0];
                 descriptor_set.write(0, camera_buffer[0]);

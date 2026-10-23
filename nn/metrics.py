@@ -82,8 +82,17 @@ def main():
 
     for input_shaded_path in frames:
         tag = input_shaded_path.stem.replace("_shaded", "")
+
+        # Prefer the RE-SHADED images (mode-2 calibration) when present:
+        # the dump-time *_shaded.f32 files use the legacy alpha and must
+        # not be mixed with the re-shaded reconstruction.
+        def prefer_offline(base: Path) -> Path:
+            offline = base.with_name(base.stem + "_offline" + base.suffix)
+            return offline if offline.exists() else base
+
+        input_shaded_path = prefer_offline(input_shaded_path)
         ours_path = dump / options.recon_source / f"{tag}_shaded_offline.f32"
-        gt_path = dump / "gt" / f"{tag}_shaded.f32"
+        gt_path = prefer_offline(dump / "gt" / f"{tag}_shaded.f32")
         if not ours_path.exists() or not gt_path.exists():
             print(f"skipping {tag}: missing shaded images")
             continue

@@ -137,6 +137,24 @@ foreach ($s in $STYLES) {
         $failed += $s; continue
     }
 
+    # ---- 2b/3 re-shade the INPUT and GT references with the SAME
+    # calibrated alpha (the dump-time *_shaded.f32 files use the legacy
+    # alpha and must not be mixed with the mode-2 reconstruction) ----
+    foreach ($src in @("input", "gt")) {
+        Write-Host "---- [$s] shading $src reference"
+        $proc = Start-Process -FilePath $VKHR_EXE `
+            -ArgumentList "--shade yes --shade-dir $dump --shade-source $src $model" `
+            -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput "shade_${s}_${src}.out.log" -RedirectStandardError "shade_${s}_${src}.err.log"
+        if ($proc.ExitCode -ne 0) { Write-Host "FAIL shade $src [$s] (exit $($proc.ExitCode))"; $failed += $s; continue }
+        $freshRef = Get-ChildItem (Join-Path $dump $src) -Filter "*_shaded_offline.f32" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.LastWriteTime -gt $start }
+        if (-not $freshRef) {
+            Write-Host "FAIL shade $src [$s]: no fresh *_shaded_offline.f32"
+            $failed += $s; continue
+        }
+    }
+
     # ---- 3/3 shaded-domain metrics (Table 1 style) ----
     Write-Host "---- [$s] 3/3 metrics"
     python nn\metrics.py --dump $dump --recon-source recon
