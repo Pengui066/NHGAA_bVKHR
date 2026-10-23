@@ -61,6 +61,12 @@ def main():
     parser.add_argument("--recon-source", default="recon",
                         help="subdir holding the shaded recon images")
     parser.add_argument("--lpips", action="store_true")
+    parser.add_argument("--require-offline", action="store_true",
+                        help="fail loudly when the re-shaded "
+                             "*_shaded_offline.f32 images are missing, "
+                             "instead of silently falling back to the "
+                             "dump-time images (mixing alpha conventions "
+                             "already burned one Table-1 run)")
     options = parser.parse_args()
 
     dump = Path(options.dump)
@@ -88,6 +94,11 @@ def main():
         # not be mixed with the re-shaded reconstruction.
         def prefer_offline(base: Path) -> Path:
             offline = base.with_name(base.stem + "_offline" + base.suffix)
+            if options.require_offline and not offline.exists():
+                print(f"ERROR: {tag}: required re-shaded image missing: "
+                      f"{offline.name} (--require-offline); refusing to mix "
+                      f"alpha conventions against the dump-time image")
+                raise SystemExit(1)
             return offline if offline.exists() else base
 
         input_shaded_path = prefer_offline(input_shaded_path)

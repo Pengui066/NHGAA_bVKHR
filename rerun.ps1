@@ -157,7 +157,7 @@ foreach ($s in $STYLES) {
 
     # ---- 3/3 shaded-domain metrics (Table 1 style) ----
     Write-Host "---- [$s] 3/3 metrics"
-    python nn\metrics.py --dump $dump --recon-source recon
+    python nn\metrics.py --dump $dump --recon-source recon --require-offline
     if ($LASTEXITCODE -ne 0) { Write-Host "FAIL metrics [$s]"; $failed += $s; continue }
 
     $done += $s
