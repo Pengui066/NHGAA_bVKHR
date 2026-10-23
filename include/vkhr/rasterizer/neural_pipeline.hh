@@ -118,6 +118,7 @@ namespace vkhr {
 
                 vk::HostBuffer coverage_buffer;  // R16F readback.
                 vk::HostBuffer tangent_buffer;   // RGBA16F readback.
+                vk::HostBuffer depth_buffer;     // D32F readback (debug).
                 vk::HostBuffer shaded_buffer;    // RGBA32F readback.
                 vk::HostBuffer coverage_upload;  // R16F upload (recon).
                 vk::HostBuffer tangent_upload;   // RGBA16F upload (recon).
@@ -130,6 +131,7 @@ namespace vkhr {
                 // mapping, so uploads go through scalar element writes.
                 void* coverage_mapped  { nullptr };
                 void* tangent_mapped   { nullptr };
+                void* depth_mapped     { nullptr };
                 void* shaded_mapped    { nullptr };
                 void* coverage_upload_mapped { nullptr };
                 void* tangent_upload_mapped  { nullptr };

@@ -628,6 +628,10 @@ namespace vkhr {
                 renderer.device, width * height * 8,
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT
             };
+            target.depth_buffer = vk::HostBuffer {
+                renderer.device, width * height * 4,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT
+            };
             target.shaded_buffer = vk::HostBuffer {
                 renderer.device, width * height * 16,
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT
@@ -653,6 +657,7 @@ namespace vkhr {
 
             target.coverage_mapped  = map_pointer(target.coverage_buffer);
             target.tangent_mapped   = map_pointer(target.tangent_buffer);
+            target.depth_mapped     = map_pointer(target.depth_buffer);
             target.shaded_mapped    = map_pointer(target.shaded_buffer);
             target.coverage_upload_mapped = map_pointer(target.coverage_upload);
             target.tangent_upload_mapped  = map_pointer(target.tangent_upload);
@@ -848,6 +853,16 @@ namespace vkhr {
 
             command_buffer.copy_image_to_buffer(target.coverage.image, target.coverage_buffer);
             command_buffer.copy_image_to_buffer(target.tangent.image, target.tangent_buffer);
+
+            if (!options.debug_dump_directory.empty()) {
+                target.depth.image.transition(command_buffer,
+                                              VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                                              VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                                              VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                              VK_PIPELINE_STAGE_TRANSFER_BIT);
+                command_buffer.copy_image_to_buffer(target.depth.image, target.depth_buffer);
+            }
 
             command_buffer.end();
             renderer.device.get_graphics_queue().submit(command_buffer).wait_idle();
@@ -1060,6 +1075,7 @@ namespace vkhr {
             const std::size_t pixel_count = std::size_t(target.width) * target.height;
             write_raw("coverage_readback.f16", target.coverage_mapped, pixel_count * 2);
             write_raw("tangent_readback.f16", target.tangent_mapped, pixel_count * 8);
+            write_raw("depth_readback.f32", target.depth_mapped, pixel_count * 4);
             write_raw("coverage_decoded.f32", coverage_f32.data(), pixel_count * 4);
             write_raw("tangent_decoded.f32", tangent_f32.data(), 3 * pixel_count * 4);
             write_raw("recon_coverage.f32", recon_coverage.data(), pixel_count * 4);
@@ -1081,6 +1097,23 @@ namespace vkhr {
                                         current_transform.position.y,
                                         current_transform.position.z };
             meta["strand_radius"] = style.parameters.strand_radius;
+
+            // The live path shades with the SCENE light as loaded; record
+            // it so the live-vs-offline comparison can be checked for a
+            // light mismatch (the offline replay derives its light from
+            // the dump meta's recorded azimuth/elevation).
+            {
+                nlohmann::json live_lights = nlohmann::json::array();
+                for (auto& light_source : scene_graph.get_light_sources()) {
+                    auto direction = light_source.get_direction();
+                    auto intensity = light_source.get_intensity();
+                    live_lights.push_back({
+                        { "direction", { direction.x, direction.y, direction.z } },
+                        { "intensity", { intensity.x, intensity.y, intensity.z } }
+                    });
+                }
+                meta["live_scene_lights"] = live_lights;
+            }
             meta["hair_color"] = { style.parameters.hair_color.x,
                                    style.parameters.hair_color.y,
                                    style.parameters.hair_color.z };

@@ -1030,10 +1030,19 @@ namespace vkhr {
                                            current_transform.position.y,
                                            current_transform.position.z } },
                     { "resolution", { input_target.width, input_target.height } },
-                    { "strand_radius", frame_radius },
-                    { "light_azimuth_rad", frame_light_azimuth },
-                    { "light_elevation_rad", frame_light_elevation }
+                    { "strand_radius", frame_radius }
                 };
+
+                // Only randomized lights need recording: for the static
+                // scene light the fields must stay ABSENT so the offline
+                // replay uses the scene light as loaded (ShadeDump's
+                // fallback). Recording the "static defaults" here made
+                // the replay derive a different direction than the scene
+                // light (az 0 / el 45 deg vs the scene's [1,2,1]).
+                if (config.random_light) {
+                    frame_data["light_azimuth_rad"] = frame_light_azimuth;
+                    frame_data["light_elevation_rad"] = frame_light_elevation;
+                }
 
                 write_json_matrix(frame_data["view"], current_transform.view);
                 write_json_matrix(frame_data["projection"], current_transform.projection);
