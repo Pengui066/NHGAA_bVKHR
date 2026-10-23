@@ -71,6 +71,7 @@ namespace vkhr {
         // Real-time neural reconstruction (S3): replaces the normal PPLL
         // color path with G-buffer -> Psi -> deferred shading. Toggled at
         // runtime for side-by-side A/B comparison.
+        void enable_neural_reconstruction(const vulkan::NeuralPipeline::Options& options);
         void enable_neural_reconstruction(const std::string& model_path);
         void disable_neural_reconstruction();
         void toggle_neural_reconstruction();
@@ -154,8 +155,8 @@ namespace vkhr {
         Interface imgui;
 
         // The neural reconstruction pipeline (null when disabled). Rebuilt
-        // on swapchain recreation; the model path is kept for toggling.
-        std::string neural_model_path { "runs/psi_v1/psi.onnx" };
+        // on swapchain recreation; the options are kept for toggling.
+        vulkan::NeuralPipeline::Options neural_options;
         std::unique_ptr<vulkan::NeuralPipeline> neural_pipeline;
 
         void set_benchmark_configurations(const Benchmark& benchmark,       SceneGraph& scene_graph);

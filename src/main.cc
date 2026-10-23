@@ -87,7 +87,12 @@ int main(int argc, char** argv) {
     // path. Press N at runtime for the side-by-side A/B comparison.
     if (argp["nn"].value.boolean == 1) {
         try {
-            rasterizer.enable_neural_reconstruction(argp["nn-model"].value.string);
+            vkhr::vulkan::NeuralPipeline::Options options;
+            options.model_path = argp["nn-model"].value.string;
+            options.debug_dump_directory = argp["nn-debug-dump"].value.string;
+            options.shade_input_channels = argp["nn-shade-input"].value.boolean == 1;
+            options.disable_occlusion = argp["nn-no-occlusion"].value.boolean == 1;
+            rasterizer.enable_neural_reconstruction(options);
         } catch (const std::exception& error) {
             std::cerr << "[nn exception] " << error.what() << std::endl;
         }

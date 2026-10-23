@@ -182,6 +182,16 @@ namespace vkhr {
             update(scene_graph);
             neural_pipeline->run(scene_graph);
             draw(neural_pipeline->get_result());
+            if (neural_pipeline->debug_dump_complete()) {
+                // --nn-debug-dump: after the neural frame, render the
+                // normal PPLL path on the SAME camera and capture it for
+                // the A/B brightness comparison, then close.
+                auto dump_directory = neural_pipeline->debug_dump_directory();
+                disable_neural_reconstruction();
+                draw(scene_graph);
+                get_screenshot().save(dump_directory + "/ppll.png");
+                window_surface.get_glfw_window().close();
+            }
             return;
         }
 
@@ -484,7 +494,7 @@ namespace vkhr {
 
         // The neural pipeline targets the swapchain extent: rebuild it.
         if (neural_pipeline)
-            neural_pipeline = std::make_unique<vulkan::NeuralPipeline>(*this, neural_model_path);
+            neural_pipeline = std::make_unique<vulkan::NeuralPipeline>(*this, neural_options);
     }
 
     Interface& Rasterizer::get_imgui() {
@@ -524,16 +534,22 @@ namespace vkhr {
         return false;
     }
 
-    void Rasterizer::enable_neural_reconstruction(const std::string& model_path) {
+    void Rasterizer::enable_neural_reconstruction(const vulkan::NeuralPipeline::Options& options) {
         device.wait_idle();
 
-        neural_model_path = model_path;
+        neural_options = options;
 
         // The neural path always uses the strand rasterizer + deferred
         // shading (the volume raymarcher has no G-buffer representation).
         imgui.make_current_renderer(Renderer::Type::Rasterizer);
 
-        neural_pipeline = std::make_unique<vulkan::NeuralPipeline>(*this, model_path);
+        neural_pipeline = std::make_unique<vulkan::NeuralPipeline>(*this, options);
+    }
+
+    void Rasterizer::enable_neural_reconstruction(const std::string& model_path) {
+        vulkan::NeuralPipeline::Options options;
+        options.model_path = model_path;
+        enable_neural_reconstruction(options);
     }
 
     void Rasterizer::disable_neural_reconstruction() {
@@ -546,7 +562,7 @@ namespace vkhr {
             disable_neural_reconstruction();
         else {
             try {
-                enable_neural_reconstruction(neural_model_path);
+                enable_neural_reconstruction(neural_options);
             } catch (const std::exception& error) {
                 std::cerr << "[nn] enable failed: " << error.what() << std::endl;
             }

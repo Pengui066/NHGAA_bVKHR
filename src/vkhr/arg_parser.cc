@@ -198,5 +198,8 @@ namespace vkhr {
         { "shade-out",     Argument::Type::String,   Argument::make_string(""),       "" },
         { "nn",            Argument::Type::Boolean,  Argument::make_boolean(false),   "" },
         { "nn-model",      Argument::Type::String,   Argument::make_string("runs/psi_v1/psi.onnx"), "" },
+        { "nn-debug-dump", Argument::Type::String,   Argument::make_string(""),       "" },
+        { "nn-shade-input", Argument::Type::Boolean, Argument::make_boolean(false),   "" },
+        { "nn-no-occlusion", Argument::Type::Boolean, Argument::make_boolean(false),  "" },
     };
 }
