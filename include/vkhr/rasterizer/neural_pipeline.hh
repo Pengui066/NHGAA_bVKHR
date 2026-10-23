@@ -37,23 +37,51 @@ namespace vkhr {
         // vulkan::HairStyle and vulkan::Model.
         class NeuralPipeline final {
         public:
-            struct FrameTiming {
-                double render_ms       { 0.0 }; // shadows + G-buffer + background.
-                double readback_ms     { 0.0 }; // host readback + fp16->fp32 + sanitize.
-                NeuralReconstruct::Timing neural;
-                double upload_shade_ms { 0.0 }; // upload recon + shading + result readback.
-                double total_ms        { 0.0 };
-            };
+        // Options for the real-time neural reconstruction path. The debug
+        // facilities exist to decompose the on-screen look into its
+        // components (raw input channels vs network reconstruction vs
+        // occlusion) and to audit the readback/refill chain against the
+        // offline pipeline.
+        struct Options {
+            std::string model_path { "runs/psi_v1/psi.onnx" };
 
-            NeuralPipeline(Rasterizer& renderer, const std::string& model_path);
+            // When non-empty, the first frame's channels are written to
+            // this directory (coverage/tangent readback, reconstructed
+            // channels, shaded result, meta.json) and the window closes.
+            std::string debug_dump_directory;
 
-            // Renders, reconstructs and shades one frame into get_result().
-            void run(const SceneGraph& scene_graph);
+            // Shade the RAW input coverage/tangent instead of the
+            // reconstructed channels (isolates the network's effect).
+            bool shade_input_channels { false };
 
-            Image& get_result() { return result; }
+            // Use a shading.frag variant with occlusion forced to 1
+            // (isolates the ADSM x LAO contribution).
+            bool disable_occlusion { false };
+        };
 
-            const FrameTiming& last_timing() const { return last_timing_; }
-            const NeuralReconstruct& get_neural() const { return neural; }
+        struct FrameTiming {
+            double render_ms       { 0.0 }; // shadows + G-buffer + background.
+            double readback_ms     { 0.0 }; // host readback + fp16->fp32 + sanitize.
+            NeuralReconstruct::Timing neural;
+            double upload_shade_ms { 0.0 }; // upload recon + shading + result readback.
+            double result_convert_ms { 0.0 }; // shaded RGBA32F -> RGBA8 on the host.
+            double total_ms        { 0.0 };
+        };
+
+        NeuralPipeline(Rasterizer& renderer, const Options& options);
+
+        // Renders, reconstructs and shades one frame into get_result().
+        void run(const SceneGraph& scene_graph);
+
+        Image& get_result() { return result; }
+
+        const FrameTiming& last_timing() const { return last_timing_; }
+        const NeuralReconstruct& get_neural() const { return neural; }
+
+        // True once the --nn-debug-dump frame has been written (the
+        // render loop should close the window afterwards).
+        bool debug_dump_complete() const { return debug_dump_complete_; }
+        const std::string& debug_dump_directory() const { return options.debug_dump_directory; }
 
         private:
             struct Attachment {
@@ -116,6 +144,11 @@ namespace vkhr {
             void create_pipelines();
             void create_target(Target& target, std::uint32_t width, std::uint32_t height);
             void write_descriptors();
+            void write_debug_dump(const SceneGraph& scene_graph,
+                                  const std::vector<float>& coverage_f32,
+                                  const std::vector<float>& tangent_f32,
+                                  const std::vector<float>& recon_coverage,
+                                  const std::vector<float>& recon_tangent);
 
             void update_camera_buffers();
             void bake_shadow_maps(const SceneGraph& scene_graph,
@@ -138,6 +171,7 @@ namespace vkhr {
             };
 
             Rasterizer& renderer;
+            Options options;
             NeuralReconstruct neural;
 
             vk::RenderPass gbuffer_pass;    // coverage + tangent + motion + depth.
@@ -161,6 +195,8 @@ namespace vkhr {
             Image result; // CPU RGBA8 image presented to the swapchain.
             FrameTiming last_timing_;
             unsigned frame_index { 0 };
+            bool debug_dump_complete_ { false };
+            bool debug_dump_written_ { false };
         };
     }
 }

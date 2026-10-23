@@ -14,8 +14,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
+
+#include <nlohmann/json.hpp>
 
 namespace vkhr {
     namespace vulkan {
@@ -93,9 +97,10 @@ namespace vkhr {
             fixed_stages.color_blending_state.pAttachments    = fixed_stages.attachments.data();
         }
 
-        NeuralPipeline::NeuralPipeline(Rasterizer& vulkan_renderer, const std::string& model_path)
+        NeuralPipeline::NeuralPipeline(Rasterizer& vulkan_renderer, const Options& pipeline_options)
                                        : renderer { vulkan_renderer },
-                                         neural { model_path,
+                                         options { pipeline_options },
+                                         neural { pipeline_options.model_path,
                                                   vulkan_renderer.swap_chain.get_width(),
                                                   vulkan_renderer.swap_chain.get_height() } {
             if (renderer.hair_styles.empty())
@@ -418,7 +423,16 @@ namespace vkhr {
             set_opaque_blending(shading_pipeline.fixed_stages, 0, WRITE_ALL);
 
             shading_pipeline.shader_stages.emplace_back(renderer.device, SHADER("gbuffer/fullscreen.vert"));
-            shading_pipeline.shader_stages.emplace_back(renderer.device, SHADER("gbuffer/shading.frag"), constants, &constant_data, sizeof(constant_data));
+            // SHADER() needs a literal (it string-concatenates the path
+            // prefix), so the debug variant is selected with two branches.
+            if (options.disable_occlusion)
+                shading_pipeline.shader_stages.emplace_back(renderer.device,
+                                                            SHADER("gbuffer/shading_no_occlusion.frag"),
+                                                            constants, &constant_data, sizeof(constant_data));
+            else
+                shading_pipeline.shader_stages.emplace_back(renderer.device,
+                                                            SHADER("gbuffer/shading.frag"),
+                                                            constants, &constant_data, sizeof(constant_data));
 
             std::vector<vk::DescriptorSet::Binding> shading_bindings {
                 { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },         // camera.
@@ -486,12 +500,19 @@ namespace vkhr {
         void NeuralPipeline::write_descriptors() {
             // Like the dump mode, the deferred shading pass shades a single
             // hair style: the first one found in the scene. The coverage/
-            // tangent bindings point at the RECONSTRUCTED channels.
+            // tangent bindings point at the RECONSTRUCTED channels - or at
+            // the raw input channels in the --nn-shade-input debug mode,
+            // which isolates the network's effect on the shaded image.
             auto& style = renderer.hair_styles.begin()->second;
 
             shading_pipeline.descriptor_sets[0].write(2, style.parameter_buffer);
-            shading_pipeline.descriptor_sets[0].write(3, target.coverage_recon.view, gbuffer_sampler);
-            shading_pipeline.descriptor_sets[0].write(5, target.tangent_recon.view, gbuffer_sampler);
+            if (options.shade_input_channels) {
+                shading_pipeline.descriptor_sets[0].write(3, target.coverage.view, gbuffer_sampler);
+                shading_pipeline.descriptor_sets[0].write(5, target.tangent.view, gbuffer_sampler);
+            } else {
+                shading_pipeline.descriptor_sets[0].write(3, target.coverage_recon.view, gbuffer_sampler);
+                shading_pipeline.descriptor_sets[0].write(5, target.tangent_recon.view, gbuffer_sampler);
+            }
             shading_pipeline.descriptor_sets[0].write(6, target.depth.view, gbuffer_sampler);
             shading_pipeline.descriptor_sets[0].write(7, target.background.view, gbuffer_sampler);
             shading_pipeline.descriptor_sets[0].write(8, style.density_view, style.density_sampler);
@@ -846,8 +867,14 @@ namespace vkhr {
             half_staging.resize(2 * pixel_count);
             std::memcpy(half_staging.data(), target.coverage_mapped,
                         half_staging.size() * sizeof(std::uint16_t));
-            for (std::size_t i { 0 }; i < pixel_count; ++i)
-                coverage_f32[i] = half_to_float(half_staging[i]);
+            for (std::size_t i { 0 }; i < pixel_count; ++i) {
+                float value = half_to_float(half_staging[i]);
+                // Zero-length tangents normalize to NaN in the shader and
+                // coverage has the same failure mode; sanitize both before
+                // the network (contract: nan_to_num is the caller's
+                // responsibility, and it applies to ALL input channels).
+                coverage_f32[i] = std::isfinite(value) ? value : 0.0f;
+            }
 
             half_staging.resize(4 * pixel_count);
             std::memcpy(half_staging.data(), target.tangent_mapped,
@@ -855,32 +882,38 @@ namespace vkhr {
             for (std::size_t i { 0 }; i < pixel_count; ++i)
                 for (std::uint32_t c { 0 }; c < 3; ++c) {
                     float value = half_to_float(half_staging[4 * i + c]);
-                    // Zero-length tangents normalize to NaN in the
-                    // shader; sanitize before the network (contract:
-                    // nan_to_num is the caller's responsibility).
                     tangent_f32[3 * i + c] = std::isfinite(value) ? value : 0.0f;
                 }
+
+            // The readback window ends HERE: it covers only the host-side
+            // staging and conversion, not the network run.
+            const auto readback_end = clock::now();
+            last_timing_.readback_ms = std::chrono::duration<double, std::milli>
+                                       (readback_end - nn_start).count();
 
             neural.run(coverage_f32.data(), tangent_f32.data(),
                        recon_coverage_f32.data(), recon_tangent_f32.data(),
                        last_timing_.neural);
 
             const auto upload_start = clock::now();
-            last_timing_.readback_ms = std::chrono::duration<double, std::milli>
-                                       (upload_start - nn_start).count();
 
             // Pack the reconstructed channels back into fp16, writing the
-            // persistently mapped upload buffers element by element: wide
-            // vector stores fault on the write-combined BAR mapping, and
-            // scalar 2-byte writes are cheap there.
+            // persistently mapped upload buffers element by element through
+            // VOLATILE pointers: wide vector stores fault on the
+            // write-combined BAR mapping, and volatile forbids the
+            // optimizer from coalescing the writes into such stores
+            // (observed to resurface after unrelated code changes, since
+            // the vectorization decision depends on the surrounding code).
             {
-                std::uint16_t* halfs = static_cast<std::uint16_t*>(target.coverage_upload_mapped);
+                volatile std::uint16_t* halfs =
+                    static_cast<volatile std::uint16_t*>(target.coverage_upload_mapped);
                 for (std::size_t i { 0 }; i < pixel_count; ++i)
                     halfs[i] = float_to_half(recon_coverage_f32[i]);
             }
 
             {
-                std::uint16_t* halfs = static_cast<std::uint16_t*>(target.tangent_upload_mapped);
+                volatile std::uint16_t* halfs =
+                    static_cast<volatile std::uint16_t*>(target.tangent_upload_mapped);
                 for (std::size_t i { 0 }; i < pixel_count; ++i) {
                     halfs[4 * i + 0] = float_to_half(recon_tangent_f32[3 * i + 0]);
                     halfs[4 * i + 1] = float_to_half(recon_tangent_f32[3 * i + 1]);
@@ -923,6 +956,24 @@ namespace vkhr {
                                                   VK_PIPELINE_STAGE_TRANSFER_BIT,
                                                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
+            // The --nn-shade-input debug mode samples the RAW input images
+            // in the shading pass; bring them back from the transfer
+            // layout cmd1 left them in.
+            if (options.shade_input_channels) {
+                target.coverage.image.transition(upload_buffer,
+                                                 VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+                                                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                target.tangent.image.transition(upload_buffer,
+                                                VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+                                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            }
+
             std::vector<VkClearValue> shading_clears { white };
 
             upload_buffer.begin_render_pass(shading_pass, target.shading_framebuffer, shading_clears);
@@ -946,6 +997,7 @@ namespace vkhr {
                                            (shade_end - upload_start).count();
 
             // ---- host: linear RGBA32F -> RGBA8 result image ----
+            const auto convert_start = clock::now();
             {
                 std::vector<float> shaded_f32(4 * pixel_count);
                 std::memcpy(shaded_f32.data(), target.shaded_mapped,
@@ -961,9 +1013,19 @@ namespace vkhr {
                     }
                 }
             }
+            last_timing_.result_convert_ms = std::chrono::duration<double, std::milli>
+                                             (clock::now() - convert_start).count();
 
             last_timing_.total_ms = std::chrono::duration<double, std::milli>
                                     (clock::now() - total_start).count();
+
+            if (frame_index == 0 && !options.debug_dump_directory.empty()
+                && !debug_dump_written_) {
+                debug_dump_written_ = true;
+                write_debug_dump(scene_graph, coverage_f32, tangent_f32,
+                                  recon_coverage_f32, recon_tangent_f32);
+                debug_dump_complete_ = true;
+            }
 
             previous_transform = current_transform;
             frame_index += 1;
@@ -974,8 +1036,65 @@ namespace vkhr {
                           << " | readback " << last_timing_.readback_ms << " ms"
                           << " | nn " << last_timing_.neural.inference_ms << " ms"
                           << " | upload+shade " << last_timing_.upload_shade_ms << " ms"
+                          << " | result " << last_timing_.result_convert_ms << " ms"
                           << " | total " << last_timing_.total_ms << " ms" << std::endl;
             }
+        }
+
+        void NeuralPipeline::write_debug_dump(const SceneGraph& scene_graph,
+                                              const std::vector<float>& coverage_f32,
+                                              const std::vector<float>& tangent_f32,
+                                              const std::vector<float>& recon_coverage,
+                                              const std::vector<float>& recon_tangent) {
+            const std::string& directory = options.debug_dump_directory;
+            std::filesystem::create_directories(directory);
+
+            auto write_raw = [&](const char* name, const void* data, std::size_t size) {
+                std::ofstream file { directory + "/" + name, std::ios::binary };
+                file.write(static_cast<const char*>(data), size);
+            };
+
+            const std::size_t pixel_count = std::size_t(target.width) * target.height;
+            write_raw("coverage_readback.f16", target.coverage_mapped, pixel_count * 2);
+            write_raw("tangent_readback.f16", target.tangent_mapped, pixel_count * 8);
+            write_raw("coverage_decoded.f32", coverage_f32.data(), pixel_count * 4);
+            write_raw("tangent_decoded.f32", tangent_f32.data(), 3 * pixel_count * 4);
+            write_raw("recon_coverage.f32", recon_coverage.data(), pixel_count * 4);
+            write_raw("recon_tangent.f32", recon_tangent.data(), 3 * pixel_count * 4);
+            write_raw("shaded.f32", target.shaded_mapped, 4 * pixel_count * 4);
+
+            auto& style = renderer.hair_styles.begin()->second;
+
+            nlohmann::json meta;
+            meta["resolution"] = { target.width, target.height };
+            meta["view"] = nlohmann::json::array();
+            meta["projection"] = nlohmann::json::array();
+            for (int column { 0 }; column < 4; ++column)
+                for (int row { 0 }; row < 4; ++row) {
+                    meta["view"].push_back(current_transform.view[column][row]);
+                    meta["projection"].push_back(current_transform.projection[column][row]);
+                }
+            meta["camera_position"] = { current_transform.position.x,
+                                        current_transform.position.y,
+                                        current_transform.position.z };
+            meta["strand_radius"] = style.parameters.strand_radius;
+            meta["hair_color"] = { style.parameters.hair_color.x,
+                                   style.parameters.hair_color.y,
+                                   style.parameters.hair_color.z };
+            meta["hair_opacity"] = style.parameters.hair_opacity;
+            meta["hair_shininess"] = style.parameters.hair_shininess;
+            meta["channels"] = {
+                { "coverage_readback.f16", "raw R16F readback of the G-buffer coverage attachment" },
+                { "tangent_readback.f16", "raw RGBA16F readback of the G-buffer tangent attachment" },
+                { "recon_coverage.f32", "network output coverage, fp32, before upload" },
+                { "recon_tangent.f32", "network output tangent, fp32, before upload" },
+                { "shaded.f32", "deferred shading result, linear RGBA32F" }
+            };
+
+            std::ofstream meta_file { directory + "/meta.json" };
+            meta_file << meta.dump(4) << std::endl;
+
+            std::cerr << "[nn] debug dump written to '" << directory << "'" << std::endl;
         }
     }
 }
