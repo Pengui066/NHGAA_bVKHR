@@ -80,6 +80,7 @@ namespace vkhr {
             friend class Volume;
             friend class GBufferRecorder;
             friend class ShadeDump;
+            friend class NeuralPipeline;
 
             static int id;
         };

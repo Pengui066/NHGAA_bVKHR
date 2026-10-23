@@ -41,6 +41,7 @@ namespace vkhr {
             vk::VertexBuffer vertices;
 
             friend class GBufferRecorder;
+            friend class NeuralPipeline;
 
             static int id;
         };

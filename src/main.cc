@@ -75,11 +75,23 @@ int main(int argc, char** argv) {
     input_map.bind("pan", vkhr::Input::MouseButton::Middle);
     input_map.bind("rotate_light", vkhr::Input::Key::L);
     input_map.bind("recompile", vkhr::Input::Key::R);
+    input_map.bind("toggle_neural", vkhr::Input::Key::N);
 
     vkhr::Rasterizer rasterizer { window, scene_graph }; // Rasterizer构造，建齐全部Vulkan资源/pipeline
 
     if (argp["ui"].value.boolean == 0)
         rasterizer.get_imgui().hide();
+
+    // The real-time neural reconstruction path (--nn yes): the window
+    // renders G-buffer -> Psi -> deferred shading instead of the PPLL
+    // path. Press N at runtime for the side-by-side A/B comparison.
+    if (argp["nn"].value.boolean == 1) {
+        try {
+            rasterizer.enable_neural_reconstruction(argp["nn-model"].value.string);
+        } catch (const std::exception& error) {
+            std::cerr << "[nn exception] " << error.what() << std::endl;
+        }
+    }
 
     auto& imgui = rasterizer.get_imgui();
 
@@ -151,6 +163,8 @@ int main(int argc, char** argv) {
             imgui.toggle_light_rotation();
         } else if (input_map.just_pressed("recompile")) {
             rasterizer.recompile();
+        } else if (input_map.just_pressed("toggle_neural")) {
+            rasterizer.toggle_neural_reconstruction();
         }
 
         camera.control(input_map, window.update_delta_time(),

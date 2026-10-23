@@ -10,6 +10,7 @@
 #include <vkhr/rasterizer/volume.hh>
 #include <vkhr/rasterizer/g_buffer_recorder.hh>
 #include <vkhr/rasterizer/shade_dump.hh>
+#include <vkhr/rasterizer/neural_pipeline.hh>
 
 #include <vkhr/rasterizer/depth_map.hh>
 #include <vkhr/renderer.hh>
@@ -17,6 +18,7 @@
 
 #include <vkpp/vkpp.hh>
 
+#include <memory>
 #include <queue>
 #include <vector>
 #include <unordered_map>
@@ -65,6 +67,14 @@ namespace vkhr {
 
         // Offline shading of dumped G-buffer channel files.
         void shade_dump(SceneGraph& scene_graph, const ShadeDumpOptions& options);
+
+        // Real-time neural reconstruction (S3): replaces the normal PPLL
+        // color path with G-buffer -> Psi -> deferred shading. Toggled at
+        // runtime for side-by-side A/B comparison.
+        void enable_neural_reconstruction(const std::string& model_path);
+        void disable_neural_reconstruction();
+        void toggle_neural_reconstruction();
+        bool neural_reconstruction_enabled() const;
 
         struct Benchmark {
             std::string description;
@@ -143,6 +153,11 @@ namespace vkhr {
 
         Interface imgui;
 
+        // The neural reconstruction pipeline (null when disabled). Rebuilt
+        // on swapchain recreation; the model path is kept for toggling.
+        std::string neural_model_path { "runs/psi_v1/psi.onnx" };
+        std::unique_ptr<vulkan::NeuralPipeline> neural_pipeline;
+
         void set_benchmark_configurations(const Benchmark& benchmark,       SceneGraph& scene_graph);
         std::string get_benchmark_results(const Benchmark& benchmark, const SceneGraph& scene_graph,
                                           const Image& screenshot); // For finding the shaded pixels.
@@ -168,6 +183,7 @@ namespace vkhr {
         friend class vulkan::LinkedList;
         friend class vulkan::GBufferRecorder;
         friend class vulkan::ShadeDump;
+        friend class vulkan::NeuralPipeline;
 
         friend class vulkan::DepthMap;
 

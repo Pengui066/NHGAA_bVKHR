@@ -172,6 +172,19 @@ namespace vkhr {
     }
 
     void Rasterizer::draw(const SceneGraph& scene_graph) {
+        if (neural_pipeline) {
+            // Neural reconstruction path (S3): render the undersampled
+            // G-buffer, reconstruct through Psi, shade deferred, then
+            // present the result through the fullscreen path. Runs
+            // synchronously; overlapping GPU/CPU work is an S4 topic.
+            // Note: no fence wait here - draw(Image&) below waits on
+            // command_buffer_finished[frame] itself.
+            update(scene_graph);
+            neural_pipeline->run(scene_graph);
+            draw(neural_pipeline->get_result());
+            return;
+        }
+
         command_buffer_finished[frame].wait_and_reset();
         imgui.record_performance(query_pools[frame].request_timestamp_queries());
         update(scene_graph); // updates descriptor sets.
@@ -468,6 +481,10 @@ namespace vkhr {
 
         framebuffers    = swap_chain.create_framebuffers(color_pass);
         command_buffers = command_pool.allocate(framebuffers.size());
+
+        // The neural pipeline targets the swapchain extent: rebuild it.
+        if (neural_pipeline)
+            neural_pipeline = std::make_unique<vulkan::NeuralPipeline>(*this, neural_model_path);
     }
 
     Interface& Rasterizer::get_imgui() {
@@ -505,6 +522,39 @@ namespace vkhr {
         }
 
         return false;
+    }
+
+    void Rasterizer::enable_neural_reconstruction(const std::string& model_path) {
+        device.wait_idle();
+
+        neural_model_path = model_path;
+
+        // The neural path always uses the strand rasterizer + deferred
+        // shading (the volume raymarcher has no G-buffer representation).
+        imgui.make_current_renderer(Renderer::Type::Rasterizer);
+
+        neural_pipeline = std::make_unique<vulkan::NeuralPipeline>(*this, model_path);
+    }
+
+    void Rasterizer::disable_neural_reconstruction() {
+        device.wait_idle();
+        neural_pipeline = nullptr;
+    }
+
+    void Rasterizer::toggle_neural_reconstruction() {
+        if (neural_pipeline)
+            disable_neural_reconstruction();
+        else {
+            try {
+                enable_neural_reconstruction(neural_model_path);
+            } catch (const std::exception& error) {
+                std::cerr << "[nn] enable failed: " << error.what() << std::endl;
+            }
+        }
+    }
+
+    bool Rasterizer::neural_reconstruction_enabled() const {
+        return neural_pipeline != nullptr;
     }
 
     Image Rasterizer::get_screenshot() {
