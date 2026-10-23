@@ -10,7 +10,8 @@
 
 ```
 输入  input: float32 [B, 4, H, W]  NCHW
-            ch0 = coverage 覆盖度（原始值，任意范围，图内会 clamp）
+            ch0 = coverage 覆盖度（原始值，原样送入网络；clamp 不在输入侧，
+                  只作用于图内输出侧的重构结果，见下方归属表"图内"行）
             ch1..3 = tangent 世界空间切向（原始值，图内会归一化）
 输出  0 coverage:      float32 [B, 1, H, W]  最终门控后覆盖度
 输出  1 tangent:       float32 [B, 3, H, W]  最终门控后切向
@@ -57,7 +58,9 @@ padding 到 8 的倍数，调用方无需处理）。
 
 ## C++ 侧备忘
 
-- 输入须满足：NCHW、float32、连续、H/W 为 4 的倍数（分块尺寸若启用亦须满足）。
+- 输入须满足：NCHW、float32、连续、H/W 为 4 的倍数（分块尺寸若启用亦须满足）；
+  **数值清洗（`nan_to_num`：NaN/±inf → 0）是调用方责任**——零长度切向会产出 NaN
+  （bear 数据有前科），必须在上传前清洗，图内不做。
 - 输出 0/1 直接写入 G-buffer 的 coverage/tangent 通道，交给现有延迟着色；
   不要再经过 evaluate/postprocess 一类的逻辑。
 - 精度 fp32；跨实现数值一致性已验证（CPU EP / CUDA EP vs PyTorch，
