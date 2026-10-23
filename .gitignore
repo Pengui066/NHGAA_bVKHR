@@ -166,3 +166,7 @@ __pycache__/
 runs/
 
 shade_log*
+
+# ONNX Runtime GPU redist DLLs (local only; see foreign/onnxruntime/README.md
+# for the download source - consistent with bin/ and the other runtime DLLs)
+foreign/onnxruntime/Gpu/

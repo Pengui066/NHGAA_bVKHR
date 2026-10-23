@@ -38,6 +38,7 @@ workspace (name)
 SDK    = "$(VULKAN_SDK)"
 GLFW   = "foreign/glfw"
 EMBREE = "foreign/embree"
+ORT    = "foreign/onnxruntime"
 
 -- With MinGW x64, always static link with the default C++ stdlib.
 STATIC_LINK = "-static -static-libstdc++ -static-libgcc -lpthread"
@@ -92,6 +93,7 @@ project (name)
         includedirs { SDK.."/include" }
         includedirs { EMBREE.."/include" }
         includedirs { GLFW.."/include" }
+        includedirs { ORT.."/include" }
 
         entrypoint "mainCRTStartup"
 
@@ -105,6 +107,17 @@ project (name)
         links { SDK.."/lib/vulkan-1.lib" }
         links { GLFW.."/lib/glfw3dll.lib" }
         links { EMBREE.."/lib/embree3.lib" }
+        links { ORT.."/lib/onnxruntime.lib" }
+
+        -- Copy the ONNX Runtime redist DLLs (CUDA EP + its cudart/cublas/
+        -- cudnn chain) next to the executable. The Gpu/ folder is local-only
+        -- (gitignored, like bin/): guarded so the build stays green on a
+        -- fresh clone that has not downloaded the redist yet.
+        postbuildcommands {
+            'if exist "$(SolutionDir)..\\foreign\\onnxruntime\\Gpu\\onnxruntime.dll" ' ..
+            'xcopy /Y /D /Q "$(SolutionDir)..\\foreign\\onnxruntime\\Gpu\\*.dll" ' ..
+            '"$(OutDir)" >nul'
+        }
     filter "system:linux or bsd or solaris"
         links { "embree3", "glfw", "vulkan" }
         linkoptions  { "-fopenmp", "-lstdc++fs" }
