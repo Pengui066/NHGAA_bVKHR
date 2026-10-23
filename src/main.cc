@@ -92,6 +92,8 @@ int main(int argc, char** argv) {
             options.debug_dump_directory = argp["nn-debug-dump"].value.string;
             options.shade_input_channels = argp["nn-shade-input"].value.boolean == 1;
             options.disable_occlusion = argp["nn-no-occlusion"].value.boolean == 1;
+            options.alpha_mode = argp["nn-alpha-mode"].value.floating;
+            options.alpha_layers = argp["nn-alpha-layers"].value.floating;
             rasterizer.enable_neural_reconstruction(options);
         } catch (const std::exception& error) {
             std::cerr << "[nn exception] " << error.what() << std::endl;

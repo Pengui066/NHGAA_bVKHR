@@ -1,5 +1,7 @@
 #include <vkhr/rasterizer/hair_style.hh>
 
+#include <iostream>
+
 #include <vkhr/rasterizer.hh>
 
 #include <vkhr/scene_graph/camera.hh>
@@ -59,6 +61,11 @@ namespace vkhr {
             parameters.hair_shininess = 80.0f; // Using Kajiya-Kay.
             parameters.strand_radius = hair_style.get_default_thickness();
             parameters.hair_opacity = hair_style.get_default_transparency();
+            // F-21: hair_alpha is the PPLL PER-LAYER blend amount; the
+            // deferred shading multiplies it only once. Log the actual
+            // values so the deferred alpha can be calibrated.
+            std::cerr << "[hair] style #" << id << " hair_opacity = "
+                      << parameters.hair_opacity << std::endl;
             parameters.strand_ratio = 1.00f; // i.e. don't reduce strands.
             parameters.hair_color = hair_style.get_default_color();
 

@@ -21,6 +21,12 @@ namespace vkhr {
     namespace vulkan {
         static const float Pi { glm::pi<float>() };
 
+        struct ShadingPushConstants {
+            glm::mat4 inverse_view_projection;
+            float alpha_mode   { 2.0f };
+            float alpha_layers { 16.0f };
+        };
+
         static constexpr auto WRITE_ALL  = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         static constexpr auto WRITE_NONE = 0;
@@ -399,7 +405,7 @@ namespace vkhr {
                 renderer.device,
                 shading_pipeline.descriptor_set_layout,
                 {
-                    { VK_SHADER_STAGE_ALL, 0, sizeof(glm::mat4) } // inverse view-projection.
+                    { VK_SHADER_STAGE_ALL, 0, sizeof(ShadingPushConstants) } // inverse view-projection + alpha calibration.
                 }
             };
 
@@ -706,8 +712,11 @@ namespace vkhr {
 
             command_buffer.bind_pipeline(shading_pipeline);
 
-            glm::mat4 inverse_view_projection = glm::inverse(current_transform.projection * current_transform.view);
-            command_buffer.push_constant(shading_pipeline, 0, inverse_view_projection);
+            ShadingPushConstants push_constants {
+                glm::inverse(current_transform.projection * current_transform.view),
+                config.alpha_mode, config.alpha_layers
+            };
+            command_buffer.push_constant(shading_pipeline, 0, push_constants);
 
             command_buffer.bind_descriptor_set(shading_pipeline.descriptor_sets[input_resolution ? 0 : 1],
                                                shading_pipeline);

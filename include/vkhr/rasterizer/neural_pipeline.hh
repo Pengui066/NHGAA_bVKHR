@@ -57,6 +57,12 @@ namespace vkhr {
             // Use a shading.frag variant with occlusion forced to 1
             // (isolates the ADSM x LAO contribution).
             bool disable_occlusion { false };
+
+            // F-21 deferred alpha calibration (see shading.frag):
+            // 0 = legacy coverage*hair_alpha, 1 = coverage only,
+            // 2 = k-layer accumulation 1-(1-c*hair_alpha)^alpha_layers.
+            float alpha_mode   { 2.0f };
+            float alpha_layers { 16.0f };
         };
 
         struct FrameTiming {
@@ -168,6 +174,12 @@ namespace vkhr {
             struct PushConstants {
                 glm::mat4 model;
                 float strand_width;
+            };
+
+            struct ShadingPushConstants {
+                glm::mat4 inverse_view_projection;
+                float alpha_mode   { 0.0f };
+                float alpha_layers { 16.0f };
             };
 
             Rasterizer& renderer;

@@ -25,6 +25,12 @@ namespace vkhr {
         std::string dump_directory;              // raw dump dir (has meta.json)
         std::string source { "recon" };          // "input" (verification) or "recon"
         std::string output_file { "" };          // explicit output path
+
+        // F-21 deferred alpha calibration (see shading.frag):
+        // 0 = legacy coverage*hair_alpha, 1 = coverage only,
+        // 2 = k-layer accumulation 1-(1-c*hair_alpha)^alpha_layers.
+        float alpha_mode   { 2.0f };
+        float alpha_layers { 16.0f };
     };
 
     namespace vulkan {

@@ -139,7 +139,7 @@ namespace vkhr {
                 renderer.device,
                 shading_pipeline.descriptor_set_layout,
                 {
-                    { VK_SHADER_STAGE_ALL, 0, sizeof(glm::mat4) } // inverse view-projection.
+                    { VK_SHADER_STAGE_ALL, 0, sizeof(glm::mat4) + 2 * sizeof(float) } // inverse view-projection + alpha calibration.
                 }
             };
 
@@ -356,8 +356,11 @@ namespace vkhr {
             command_buffer.set_scissor(shading_pipeline.fixed_stages.scissor);
             command_buffer.bind_pipeline(shading_pipeline);
 
-            glm::mat4 inverse_view_projection = glm::inverse(camera_transform.projection * camera_transform.view);
-            command_buffer.push_constant(shading_pipeline, 0, inverse_view_projection);
+            struct { glm::mat4 inverse_view_projection; float alpha_mode; float alpha_layers; } push_constants;
+            push_constants.inverse_view_projection = glm::inverse(camera_transform.projection * camera_transform.view);
+            push_constants.alpha_mode = options.alpha_mode;
+            push_constants.alpha_layers = options.alpha_layers;
+            command_buffer.push_constant(shading_pipeline, 0, push_constants);
 
             command_buffer.bind_descriptor_set(shading_pipeline.descriptor_sets[0], shading_pipeline);
             command_buffer.draw(3);

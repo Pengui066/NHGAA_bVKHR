@@ -24,6 +24,13 @@ layout(binding = 8) uniform sampler3D strand_density;
 
 layout(push_constant) uniform Inverse {
     mat4 inv_view_projection;
+    // F-21 deferred alpha calibration:
+    //   0.0 = legacy: alpha = coverage * hair_alpha (per-layer amount
+    //        applied once - the mismatch: PPLL accumulates 16 layers)
+    //   1.0 = coverage only
+    //   2.0 = k-layer accumulation: 1 - (1 - coverage*hair_alpha)^k
+    float alpha_mode;
+    float alpha_layers;
 } inverse_vp;
 
 layout(location = 0) out vec4 color;
@@ -80,7 +87,13 @@ void main() {
                                          2, occlusion_radius,
                                          ao_exponent, ao_max);
 
-    float alpha = coverage * hair_alpha;
+    float alpha = coverage * hair_alpha; // legacy per-layer blend amount.
+
+    if (inverse_vp.alpha_mode == 1.0f) {
+        alpha = coverage;
+    } else if (inverse_vp.alpha_mode == 2.0f) {
+        alpha = 1.0f - pow(max(1.0f - alpha, 0.0f), inverse_vp.alpha_layers);
+    }
 
     color = vec4(mix(background.rgb, shading * occlusion, alpha), 1.0f);
 }
