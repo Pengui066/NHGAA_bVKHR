@@ -196,6 +196,7 @@ namespace vkhr {
         { "shade-dir",     Argument::Type::String,   Argument::make_string("dumps"),  "" },
         { "shade-source",  Argument::Type::String,   Argument::make_string("recon"),  "" },
         { "shade-out",     Argument::Type::String,   Argument::make_string(""),       "" },
+        { "shade-no-occlusion", Argument::Type::Boolean, Argument::make_boolean(false), "" },
         { "nn",            Argument::Type::Boolean,  Argument::make_boolean(false),   "" },
         { "nn-model",      Argument::Type::String,   Argument::make_string("runs/psi_v1/psi.onnx"), "" },
         { "nn-debug-dump", Argument::Type::String,   Argument::make_string(""),       "" },

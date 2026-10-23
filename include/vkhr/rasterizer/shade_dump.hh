@@ -31,6 +31,10 @@ namespace vkhr {
         // 2 = k-layer accumulation 1-(1-c*hair_alpha)^alpha_layers.
         float alpha_mode   { 2.0f };
         float alpha_layers { 16.0f };
+
+        // Debug: use the no-occlusion shading variant (isolates the
+        // ADSM x LAO contribution, mirroring --nn-no-occlusion).
+        bool disable_occlusion { false };
     };
 
     namespace vulkan {

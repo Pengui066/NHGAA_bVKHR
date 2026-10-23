@@ -1098,6 +1098,23 @@ namespace vkhr {
                                         current_transform.position.z };
             meta["strand_radius"] = style.parameters.strand_radius;
 
+            // F-23: the live shading parameters, for the two-process
+            // comparison against the offline shade run.
+            {
+                auto& p = renderer.imgui.parameters;
+                meta["live_params"] = {
+                    { "shading_model", p.shading_model },
+                    { "adsm_kernel_size", p.adsm_kernel_size },
+                    { "adsm_stride_size", p.adsm_stride_size },
+                    { "adsm_on", p.adsm_on },
+                    { "ctsm_kernel_size", p.ctsm_kernel_size },
+                    { "ctsm_on", p.ctsm_on },
+                    { "occlusion_radius", p.occlusion_radius },
+                    { "ao_exponent", p.ao_exponent },
+                    { "ao_clamp", p.ao_clamp }
+                };
+            }
+
             // The live path shades with the SCENE light as loaded; record
             // it so the live-vs-offline comparison can be checked for a
             // light mismatch (the offline replay derives its light from

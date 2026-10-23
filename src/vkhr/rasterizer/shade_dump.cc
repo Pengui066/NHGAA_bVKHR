@@ -109,7 +109,14 @@ namespace vkhr {
 
             shading_pipeline.shader_stages.emplace_back(renderer.device, SHADER("gbuffer/fullscreen.vert"));
             vk::DebugMarker::object_name(renderer.device, shading_pipeline.shader_stages[0], VK_OBJECT_TYPE_SHADER_MODULE, "Shade Dump Vertex Shader");
-            shading_pipeline.shader_stages.emplace_back(renderer.device, SHADER("gbuffer/shading.frag"), constants, &constant_data, sizeof(constant_data));
+            if (options.disable_occlusion)
+                shading_pipeline.shader_stages.emplace_back(renderer.device,
+                                                            SHADER("gbuffer/shading_no_occlusion.frag"),
+                                                            constants, &constant_data, sizeof(constant_data));
+            else
+                shading_pipeline.shader_stages.emplace_back(renderer.device,
+                                                            SHADER("gbuffer/shading.frag"),
+                                                            constants, &constant_data, sizeof(constant_data));
             vk::DebugMarker::object_name(renderer.device, shading_pipeline.shader_stages[1], VK_OBJECT_TYPE_SHADER_MODULE, "Shade Dump Fragment Shader");
 
             std::vector<vk::DescriptorSet::Binding> bindings {
@@ -391,6 +398,23 @@ namespace vkhr {
         }
 
         void ShadeDump::run() {
+            {
+                auto& p = renderer.imgui.parameters;
+                std::cerr << "[shade] params: model " << p.shading_model
+                          << " adsm_k " << p.adsm_kernel_size << " stride " << p.adsm_stride_size
+                          << " adsm_on " << p.adsm_on
+                          << " ctsm_k " << p.ctsm_kernel_size << " ctsm_on " << p.ctsm_on
+                          << " occ_radius " << p.occlusion_radius
+                          << " ao_exp " << p.ao_exponent << " ao_clamp " << p.ao_clamp << std::endl;
+                for (auto& light_source : scene_graph.light_sources) {
+                    auto direction = light_source.get_direction();
+                    auto intensity = light_source.get_intensity();
+                    std::cerr << "[shade] scene light dir [" << direction.x << ", " << direction.y
+                              << ", " << direction.z << "] intensity [" << intensity.x << ", "
+                              << intensity.y << ", " << intensity.z << "]" << std::endl;
+                }
+            }
+
             std::cerr << "[shade] run entered" << std::endl;
             std::cerr << "[shade] run: writing descriptors" << std::endl;
             auto& style = renderer.hair_styles.begin()->second;

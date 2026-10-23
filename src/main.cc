@@ -139,6 +139,7 @@ int main(int argc, char** argv) {
         options.dump_directory = argp["shade-dir"].value.string;
         options.source         = argp["shade-source"].value.string;
         options.output_file    = argp["shade-out"].value.string;
+        options.disable_occlusion = argp["shade-no-occlusion"].value.boolean == 1;
 
         try {
             rasterizer.shade_dump(scene_graph, options);
