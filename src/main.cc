@@ -86,6 +86,8 @@ int main(int argc, char** argv) {
     // renders G-buffer -> Psi -> deferred shading instead of the PPLL
     // path. Press N at runtime for the side-by-side A/B comparison.
     if (argp["nn"].value.boolean == 1) {
+        std::cerr << "[nn] enabling neural reconstruction, provider="
+                  << argp["nn-provider"].value.string << std::endl;
         try {
             vkhr::vulkan::NeuralPipeline::Options options;
             options.model_path = argp["nn-model"].value.string;
@@ -95,6 +97,8 @@ int main(int argc, char** argv) {
             options.alpha_mode = argp["nn-alpha-mode"].value.floating;
             options.alpha_layers = argp["nn-alpha-layers"].value.floating;
             options.profile_path = argp["nn-profile"].value.string;
+            options.provider     = argp["nn-provider"].value.string;
+            options.fp16         = argp["nn-fp16"].value.boolean == 1;
             rasterizer.enable_neural_reconstruction(options);
         } catch (const std::exception& error) {
             std::cerr << "[nn exception] " << error.what() << std::endl;

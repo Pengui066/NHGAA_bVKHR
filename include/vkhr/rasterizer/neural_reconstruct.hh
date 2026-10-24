@@ -20,6 +20,15 @@ namespace vkhr::vulkan {
     // See nn/onnx_prepost_contract.md for the authoritative table.
     class NeuralReconstruct final {
     public:
+        // S4-3: execution provider selection. TRT uses the ORT TensorRT EP
+        // with an engine cache (the first build is slow and crash-prone on
+        // this machine; every later run deserializes the cached engine).
+        struct ExecutionOptions {
+            bool tensorrt { false };
+            bool fp16 { false };              // TRT only; judge by the v1.2 criteria.
+            std::string cache_dir { "runs/trt_cache" };
+        };
+
         struct Timing {
             double pack_ms       { 0.0 }; // planar -> NCHW packing.
             double inference_ms  { 0.0 }; // ONNX Runtime session run.
@@ -29,7 +38,8 @@ namespace vkhr::vulkan {
 
         NeuralReconstruct(const std::string& model_path,
                           std::uint32_t width, std::uint32_t height,
-                          const std::string& profile_path = "");
+                          const std::string& profile_path = "",
+                          const ExecutionOptions& execution = {});
         ~NeuralReconstruct();
 
         NeuralReconstruct(const NeuralReconstruct&) = delete;

@@ -69,6 +69,14 @@ namespace vkhr {
             // S4-0.4: when non-empty, the ORT session runs with
             // EnableProfiling and writes a chrome-trace JSON here.
             std::string profile_path;
+
+            // S4-3: execution provider ("cuda" or "trt"). With "trt",
+            // engines are cached under the directory below, so the first
+            // run builds (slow, and crash-prone on this machine) and
+            // every later run deserializes.
+            std::string provider { "cuda" };
+            bool        fp16     { false }; // TRT-only precision switch.
+            std::string trt_cache_dir { "runs/trt_cache" };
         };
 
         struct FrameTiming {

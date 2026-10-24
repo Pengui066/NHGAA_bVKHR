@@ -31,7 +31,8 @@ namespace vkhr::vulkan {
     public:
         Implementation(const std::string& model_path,
                        std::uint32_t width, std::uint32_t height,
-                       const std::string& profile_path)
+                       const std::string& profile_path,
+                       const NeuralReconstruct::ExecutionOptions& execution)
             : width_ { width }, height_ { height } {
             input_.resize(4 * std::size_t(width) * height);
             input_shape_ = { 1, 4, static_cast<std::int64_t>(height),
@@ -50,6 +51,57 @@ namespace vkhr::vulkan {
 
             Ort::SessionOptions cuda_options;
             cuda_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+
+            // S4-3 route A: the ORT TensorRT EP in front of CUDA, through
+            // the key-value option API (no provider-struct layout risk).
+            if (execution.tensorrt) {
+                std::cerr << "[nn] TRT EP: creating provider options..." << std::endl;
+                const OrtApi& api = Ort::GetApi();
+                OrtTensorRTProviderOptionsV2* trt_options { nullptr };
+                OrtStatus* create = api.CreateTensorRTProviderOptions(&trt_options);
+                if (!create) {
+                    std::vector<const char*> keys {
+                        "device_id", "trt_fp16_enable",
+                        "trt_engine_cache_enable", "trt_engine_cache_path",
+                        "trt_timing_cache_enable", "trt_timing_cache_path",
+                        "trt_builder_optimization_level"
+                    };
+                    std::string fp16 = execution.fp16 ? "True" : "False";
+                    std::string level = "2"; // lighter builder stress than the default 3.
+                    std::vector<const char*> values {
+                        "0", fp16.c_str(),
+                        "True", execution.cache_dir.c_str(),
+                        "True", execution.cache_dir.c_str(),
+                        level.c_str()
+                    };
+                    OrtStatus* update = api.UpdateTensorRTProviderOptions(
+                        trt_options, keys.data(), values.data(), keys.size());
+                    if (update) {
+                        std::cerr << "[nn] TRT option update failed: "
+                                  << api.GetErrorMessage(update) << std::endl;
+                        api.ReleaseStatus(update);
+                    }
+                    std::cerr << "[nn] TRT EP: appending provider (loads "
+                                 "onnxruntime_providers_tensorrt.dll)..." << std::endl;
+                    OrtStatus* append = api.SessionOptionsAppendExecutionProvider_TensorRT_V2(
+                        cuda_options, trt_options);
+                    api.ReleaseTensorRTProviderOptions(trt_options);
+                    if (append) {
+                        std::cerr << "[nn] TRT EP append failed: "
+                                  << api.GetErrorMessage(append) << std::endl;
+                        api.ReleaseStatus(append);
+                    } else {
+                        std::cerr << "[nn] TRT EP requested"
+                                  << (execution.fp16 ? " (fp16)" : " (fp32)")
+                                  << ", engine cache: " << execution.cache_dir
+                                  << std::endl;
+                    }
+                } else {
+                    std::cerr << "[nn] CreateTensorRTProviderOptions failed: "
+                              << api.GetErrorMessage(create) << std::endl;
+                    api.ReleaseStatus(create);
+                }
+            }
 
             // S4-0.4: optional ORT profiling (chrome-trace JSON, finalized
             // when the session is destroyed).
@@ -170,10 +222,11 @@ namespace vkhr::vulkan {
 
     NeuralReconstruct::NeuralReconstruct(const std::string& model_path,
                                          std::uint32_t width, std::uint32_t height,
-                                         const std::string& profile_path)
+                                         const std::string& profile_path,
+                                         const ExecutionOptions& execution)
         : width_ { width }, height_ { height },
           implementation_ { std::make_unique<Implementation>(model_path, width, height,
-                                                             profile_path) } {
+                                                             profile_path, execution) } {
     }
 
     NeuralReconstruct::~NeuralReconstruct() = default;

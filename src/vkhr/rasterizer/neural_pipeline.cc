@@ -160,13 +160,22 @@ namespace vkhr {
             fixed_stages.color_blending_state.pAttachments    = fixed_stages.attachments.data();
         }
 
+        static NeuralReconstruct::ExecutionOptions execution_options(const NeuralPipeline::Options& pipeline_options) {
+            NeuralReconstruct::ExecutionOptions execution;
+            execution.tensorrt  = pipeline_options.provider == "trt";
+            execution.fp16      = execution.tensorrt && pipeline_options.fp16;
+            execution.cache_dir = pipeline_options.trt_cache_dir;
+            return execution;
+        }
+
         NeuralPipeline::NeuralPipeline(Rasterizer& vulkan_renderer, const Options& pipeline_options)
                                        : renderer { vulkan_renderer },
                                          options { pipeline_options },
                                          neural { pipeline_options.model_path,
                                                   vulkan_renderer.swap_chain.get_width(),
                                                   vulkan_renderer.swap_chain.get_height(),
-                                                  pipeline_options.profile_path } {
+                                                  pipeline_options.profile_path,
+                                                  execution_options(pipeline_options) } {
             if (renderer.hair_styles.empty())
                 throw std::runtime_error {
                     "vkhr: the neural reconstruction mode requires a scene "

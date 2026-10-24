@@ -205,5 +205,7 @@ namespace vkhr {
         { "nn-alpha-mode",   Argument::Type::Floating, Argument::make_floating(2.0f),  "" },
         { "nn-alpha-layers", Argument::Type::Floating, Argument::make_floating(16.0f), "" },
         { "nn-profile",     Argument::Type::String,   Argument::make_string(""),       "" },
+        { "nn-provider",    Argument::Type::String,   Argument::make_string("cuda"),   "" },
+        { "nn-fp16",        Argument::Type::Boolean,  Argument::make_boolean(false),   "" },
     };
 }
