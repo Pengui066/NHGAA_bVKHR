@@ -1051,7 +1051,9 @@ namespace vkhr {
             // element-wise reads from BAR memory are uncached-slow, while
             // a single wide read is fast (wide WRITES to the BAR mapping
             // fault, so the upload side stays scalar below).
-            half_staging.resize(2 * pixel_count);
+            // Coverage is R16: one half per pixel (the buffer is
+            // width*height*2 bytes, not 2 halfs per pixel).
+            half_staging.resize(pixel_count);
             std::memcpy(half_staging.data(), target.coverage_mapped,
                         half_staging.size() * sizeof(std::uint16_t));
             // Zero-length tangents normalize to NaN in the shader and
