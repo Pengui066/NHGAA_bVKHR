@@ -62,11 +62,21 @@ namespace vkhr {
         }
 
         void Billboard::send_img(vk::DescriptorSet& descriptor_set, vkhr::Image& img, vk::CommandBuffer& command_buffer) {
+            external_view = nullptr; // back to the internal image.
+            external_sampler = nullptr;
             billboard_image.staged_copy(img, command_buffer);
         }
 
+        void Billboard::send_img(vk::DescriptorSet& descriptor_set, vk::ImageView& image_view,
+                                 vk::Sampler& sampler, vk::CommandBuffer& command_buffer) {
+            external_view = &image_view;
+            external_sampler = &sampler;
+        }
+
         void Billboard::draw(Pipeline& pipeline, vk::DescriptorSet& descriptor_set, vk::CommandBuffer& command_buffer) {
-            descriptor_set.write(1, billboard_view, billboard_sampler);
+            if (external_view)
+                descriptor_set.write(1, *external_view, *external_sampler);
+            else descriptor_set.write(1, billboard_view, billboard_sampler);
             command_buffer.bind_descriptor_set(descriptor_set, pipeline);
             command_buffer.draw(6, 1);
         }

@@ -42,6 +42,7 @@ namespace vkhr {
 
         void draw(const SceneGraph& scene) override;
         void draw(Image& fullscreen_image);
+        void draw(vk::ImageView& fullscreen_view, vk::Sampler& fullscreen_sampler);
 
         void draw_depth(const SceneGraph& scene_graph, vk::CommandBuffer& command_buffer);
         void draw_model(const SceneGraph& scene_graph, Pipeline& pipeline, vk::CommandBuffer& command_buffer, glm::mat4 = glm::mat4 { 1.0f });

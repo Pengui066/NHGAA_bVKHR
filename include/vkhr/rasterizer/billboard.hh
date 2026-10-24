@@ -35,6 +35,11 @@ namespace vkhr {
 
             void send_img(vk::DescriptorSet&, Image&, vk::CommandBuffer&);
 
+            // S4-1a: present an already-resident GPU image (the neural
+            // pipeline's RGBA8 conversion result) without a host trip.
+            void send_img(vk::DescriptorSet&, vk::ImageView&, vk::Sampler&,
+                          vk::CommandBuffer&);
+
             void draw(Pipeline& pipeline,
                       vk::DescriptorSet& descriptor_set,
                       vk::CommandBuffer& command_buffer) override;
@@ -46,6 +51,10 @@ namespace vkhr {
             vk::ImageView billboard_view;
             vk::DeviceImage billboard_image;
             vk::Sampler billboard_sampler;
+
+            // External presentation image (S4-1a), null when unused.
+            vk::ImageView* external_view { nullptr };
+            vk::Sampler* external_sampler { nullptr };
 
             static int id;
         };

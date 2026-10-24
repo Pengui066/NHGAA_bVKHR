@@ -222,6 +222,31 @@ namespace vkhr {
                 std::vector<vk::RenderPass::Subpass> { shading_subpass },
                 std::vector<vk::RenderPass::Dependency> { shading_dependency }
             };
+
+            // S4-1a: the RGBA32F -> RGBA8 conversion pass (the presentation
+            // image; the shading pass output stays linear for the dumps).
+            std::vector<vk::RenderPass::Attachment> convert_attachments {
+                { VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+            };
+
+            std::vector<VkAttachmentReference> convert_subpass {
+                { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL }
+            };
+
+            vk::RenderPass::Dependency convert_dependency {
+                0, VK_SUBPASS_EXTERNAL,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_ACCESS_TRANSFER_READ_BIT
+            };
+
+            convert_pass = vk::RenderPass {
+                renderer.device,
+                convert_attachments,
+                std::vector<vk::RenderPass::Subpass> { convert_subpass },
+                std::vector<vk::RenderPass::Dependency> { convert_dependency }
+            };
         }
 
         void NeuralPipeline::create_pipelines() {
@@ -474,6 +499,57 @@ namespace vkhr {
                 shading_pass
             };
 
+            // S4-1a: the RGBA32F -> RGBA8 conversion pipeline.
+            convert_pipeline = Pipeline { };
+
+            convert_pipeline.fixed_stages.set_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+            convert_pipeline.fixed_stages.set_scissor({ 0, 0, extent });
+            convert_pipeline.fixed_stages.set_viewport({ 0.0f, 0.0f,
+                                                         static_cast<float>(extent.width),
+                                                         static_cast<float>(extent.height),
+                                                         0.0f, 1.0f });
+
+            convert_pipeline.fixed_stages.add_dynamic_state(VK_DYNAMIC_STATE_VIEWPORT);
+            convert_pipeline.fixed_stages.add_dynamic_state(VK_DYNAMIC_STATE_SCISSOR);
+
+            convert_pipeline.fixed_stages.set_culling_mode(VK_CULL_MODE_NONE); // fullscreen triangle.
+            convert_pipeline.fixed_stages.disable_depth_test();
+
+            set_opaque_blending(convert_pipeline.fixed_stages, 0, WRITE_ALL);
+
+            convert_pipeline.shader_stages.emplace_back(renderer.device, SHADER("gbuffer/fullscreen.vert"));
+            convert_pipeline.shader_stages.emplace_back(renderer.device, SHADER("gbuffer/convert_rgba8.frag"));
+
+            convert_pipeline.descriptor_set_layout = vk::DescriptorSet::Layout {
+                renderer.device,
+                {
+                    { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER },         // camera (resolution).
+                    { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER }  // shaded RGBA32F.
+                }
+            };
+
+            convert_pipeline.descriptor_sets = renderer.descriptor_pool.allocate(1,
+                                                                                 convert_pipeline.descriptor_set_layout,
+                                                                                 "Neural Convert Descriptor Set");
+
+            convert_pipeline.pipeline_layout = vk::Pipeline::Layout {
+                renderer.device,
+                convert_pipeline.descriptor_set_layout
+            };
+
+            convert_pipeline.pipeline = vk::GraphicsPipeline {
+                renderer.device,
+                convert_pipeline.shader_stages,
+                convert_pipeline.fixed_stages,
+                convert_pipeline.pipeline_layout,
+                convert_pass
+            };
+
+            convert_pipeline.descriptor_sets[0].write(0, camera_buffer[0]);
+            // Binding 1 (the shaded image) is written in
+            // write_descriptors(): the target does not exist yet here.
+
             // Write the descriptors that don't depend on the scene graph
             // (the camera buffers). Scene-dependent buffers are written in
             // write_descriptors().
@@ -517,6 +593,9 @@ namespace vkhr {
             shading_pipeline.descriptor_sets[0].write(6, target.depth.view, gbuffer_sampler);
             shading_pipeline.descriptor_sets[0].write(7, target.background.view, gbuffer_sampler);
             shading_pipeline.descriptor_sets[0].write(8, style.density_view, style.density_sampler);
+
+            // S4-1a: the convert pass samples the shaded RGBA32F result.
+            convert_pipeline.descriptor_sets[0].write(1, target.shaded.view, gbuffer_sampler);
         }
 
         NeuralPipeline::Attachment NeuralPipeline::create_attachment(Rasterizer& vulkan_renderer,
@@ -603,6 +682,12 @@ namespace vkhr {
             target.gbuffer_attachments.emplace_back(renderer.device, target.depth.image,
                                                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
+            // S4-1a: the RGBA8 presentation image (color attachment +
+            // sampled + transfer source for the debug readback).
+            target.result_rgba8 = create_attachment(renderer, width, height,
+                                                    VK_FORMAT_R8G8B8A8_UNORM,
+                                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+
             target.gbuffer_framebuffer = vk::Framebuffer {
                 renderer.device, gbuffer_pass, target.gbuffer_attachments, VkExtent2D { width, height }
             };
@@ -621,6 +706,12 @@ namespace vkhr {
                 renderer.device, shading_pass, target.shading_attachments, VkExtent2D { width, height }
             };
 
+            target.convert_attachments.emplace_back(renderer.device, target.result_rgba8.image);
+
+            target.convert_framebuffer = vk::Framebuffer {
+                renderer.device, convert_pass, target.convert_attachments, VkExtent2D { width, height }
+            };
+
             target.coverage_buffer = vk::HostBuffer {
                 renderer.device, width * height * 2,
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT
@@ -630,6 +721,10 @@ namespace vkhr {
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT
             };
             target.depth_buffer = vk::HostBuffer {
+                renderer.device, width * height * 4,
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT
+            };
+            target.result_rgba8_buffer = vk::HostBuffer {
                 renderer.device, width * height * 4,
                 VK_BUFFER_USAGE_TRANSFER_DST_BIT
             };
@@ -659,6 +754,7 @@ namespace vkhr {
             target.coverage_mapped  = map_pointer(target.coverage_buffer);
             target.tangent_mapped   = map_pointer(target.tangent_buffer);
             target.depth_mapped     = map_pointer(target.depth_buffer);
+            target.result_rgba8_mapped = map_pointer(target.result_rgba8_buffer);
             target.shaded_mapped    = map_pointer(target.shaded_buffer);
             target.coverage_upload_mapped = map_pointer(target.coverage_upload);
             target.tangent_upload_mapped  = map_pointer(target.tangent_upload);
@@ -1001,14 +1097,39 @@ namespace vkhr {
             draw_deferred_shading(upload_buffer);
             upload_buffer.end_render_pass();
 
-            target.shaded.image.transition(upload_buffer,
-                                           VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
-                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                           VK_PIPELINE_STAGE_TRANSFER_BIT);
+            // S4-1a: convert the shaded RGBA32F into the RGBA8 presentation
+            // image on the GPU (bit-identical rounding to the former host
+            // conversion; the host conversion now runs only in debug dumps).
+            std::vector<VkClearValue> convert_clears { zero };
 
-            upload_buffer.copy_image_to_buffer(target.shaded.image, target.shaded_buffer);
+            upload_buffer.begin_render_pass(convert_pass, target.convert_framebuffer, convert_clears);
+            upload_buffer.set_viewport(target.viewport);
+            upload_buffer.set_scissor(target.scissor);
+            upload_buffer.bind_pipeline(convert_pipeline);
+            upload_buffer.bind_descriptor_set(convert_pipeline.descriptor_sets[0], convert_pipeline);
+            upload_buffer.draw(3); // fullscreen triangle.
+            upload_buffer.end_render_pass();
+
+            if (!options.debug_dump_directory.empty()) {
+                target.shaded.image.transition(upload_buffer,
+                                               VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                               VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                               VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+                upload_buffer.copy_image_to_buffer(target.shaded.image, target.shaded_buffer);
+
+                target.result_rgba8.image.transition(upload_buffer,
+                                                     VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                                     VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+                upload_buffer.copy_image_to_buffer(target.result_rgba8.image,
+                                                   target.result_rgba8_buffer);
+            }
 
             upload_buffer.end();
             renderer.device.get_graphics_queue().submit(upload_buffer).wait_idle();
@@ -1018,25 +1139,50 @@ namespace vkhr {
                                            (shade_end - upload_start).count();
 
             // ---- host: linear RGBA32F -> RGBA8 result image ----
-            const auto convert_start = clock::now();
-            {
+            const auto convert_end = clock::now();
+            // S4-1a: the conversion now runs on the GPU inside cmd2; the
+            // host window here covers only the (absent) host work, so this
+            // segment collapses to ~0 in the interactive path.
+            last_timing_.result_convert_ms = std::chrono::duration<double, std::milli>
+                                             (convert_end - shade_end).count();
+
+            if (frame_index == 0 && !options.debug_dump_directory.empty()) {
+                // Debug-only: reproduce the former host conversion and
+                // compare it against the GPU-converted image byte-for-byte
+                // (the rounding must match exactly).
                 std::vector<float> shaded_f32(4 * pixel_count);
                 std::memcpy(shaded_f32.data(), target.shaded_mapped,
                             shaded_f32.size() * sizeof(float));
 
                 const float* rgba = shaded_f32.data();
                 Color* pixels = result.get_pixels();
+                std::size_t mismatches { 0 };
+                unsigned max_diff { 0 };
+                const unsigned char* gpu_bytes =
+                    static_cast<const unsigned char*>(target.result_rgba8_mapped);
 
                 for (std::size_t i { 0 }; i < pixel_count; ++i) {
                     for (std::uint32_t c { 0 }; c < 4; ++c) {
                         float channel = glm::clamp(rgba[4 * i + c], 0.0f, 1.0f);
-                        pixels[i][c] = static_cast<unsigned char>(channel * 255.0f + 0.5f);
+                        unsigned char cpu_value = static_cast<unsigned char>(channel * 255.0f + 0.5f);
+                        pixels[i][c] = cpu_value;
+                        unsigned char gpu_value = gpu_bytes[4 * i + c];
+                        if (cpu_value != gpu_value) {
+                            mismatches += 1;
+                            max_diff = std::max(max_diff,
+                                static_cast<unsigned>(std::abs(static_cast<int>(cpu_value) - gpu_value)));
+                        }
                     }
                 }
+
+
+                if (mismatches)
+                    std::cerr << "[nn] S4-1a: GPU-vs-CPU conversion mismatches: "
+                              << mismatches << " / " << 4 * pixel_count << std::endl;
+                else
+                    std::cerr << "[nn] S4-1a: GPU conversion bit-identical to the host conversion"
+                              << std::endl;
             }
-            const auto convert_end = clock::now();
-            last_timing_.result_convert_ms = std::chrono::duration<double, std::milli>
-                                             (convert_end - shade_end).count();
 
             last_timing_.total_ms = std::chrono::duration<double, std::milli>
                                     (convert_end - total_start).count();

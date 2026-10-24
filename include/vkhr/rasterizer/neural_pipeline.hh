@@ -119,6 +119,10 @@ namespace vkhr {
 
         Image& get_result() { return result; }
 
+        // S4-1a: the GPU-converted RGBA8 result for presentation.
+        vk::ImageView& get_result_view() { return target.result_rgba8.view; }
+        vk::Sampler& get_result_sampler() { return gbuffer_sampler; }
+
         const FrameTiming& last_timing() const { return last_timing_; }
         const NeuralReconstruct& get_neural() const { return neural; }
 
@@ -154,10 +158,16 @@ namespace vkhr {
                 Attachment coverage_recon;   // R16_SFLOAT
                 Attachment tangent_recon;    // R16G16B16A16_SFLOAT
 
+                // S4-1a: the RGBA8 presentation image, converted on the
+                // GPU from the shaded RGBA32F (same rounding as the old
+                // host conversion). Read back only in the debug dump.
+                Attachment result_rgba8;     // R8G8B8A8_UNORM
+
                 vk::HostBuffer coverage_buffer;  // R16F readback.
                 vk::HostBuffer tangent_buffer;   // RGBA16F readback.
                 vk::HostBuffer depth_buffer;     // D32F readback (debug).
                 vk::HostBuffer shaded_buffer;    // RGBA32F readback.
+                vk::HostBuffer result_rgba8_buffer; // RGBA8 readback (debug).
                 vk::HostBuffer coverage_upload;  // R16F upload (recon).
                 vk::HostBuffer tangent_upload;   // RGBA16F upload (recon).
 
@@ -170,6 +180,7 @@ namespace vkhr {
                 void* coverage_mapped  { nullptr };
                 void* tangent_mapped   { nullptr };
                 void* depth_mapped     { nullptr };
+                void* result_rgba8_mapped { nullptr };
                 void* shaded_mapped    { nullptr };
                 void* coverage_upload_mapped { nullptr };
                 void* tangent_upload_mapped  { nullptr };
@@ -177,10 +188,12 @@ namespace vkhr {
                 std::vector<vk::ImageView> gbuffer_attachments;
                 std::vector<vk::ImageView> background_attachments;
                 std::vector<vk::ImageView> shading_attachments;
+                std::vector<vk::ImageView> convert_attachments;
 
                 vk::Framebuffer gbuffer_framebuffer;
                 vk::Framebuffer background_framebuffer;
                 vk::Framebuffer shading_framebuffer;
+                vk::Framebuffer convert_framebuffer;
 
                 VkViewport viewport;
                 VkRect2D   scissor;
@@ -229,11 +242,13 @@ namespace vkhr {
             vk::RenderPass gbuffer_pass;    // coverage + tangent + motion + depth.
             vk::RenderPass background_pass; // shaded head model.
             vk::RenderPass shading_pass;    // deferred hair shading over background.
+            vk::RenderPass convert_pass;    // S4-1a: RGBA32F -> RGBA8 on the GPU.
 
             Pipeline hair_gbuffer_pipeline;
             Pipeline head_occlusion_pipeline;
             Pipeline background_pipeline;
             Pipeline shading_pipeline;
+            Pipeline convert_pipeline;
 
             std::vector<vk::UniformBuffer> camera_buffer;
             std::vector<vk::UniformBuffer> prev_camera_buffer;

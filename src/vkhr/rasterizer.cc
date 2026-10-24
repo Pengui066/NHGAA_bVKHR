@@ -181,7 +181,7 @@ namespace vkhr {
             // command_buffer_finished[frame] itself.
             update(scene_graph);
             neural_pipeline->run(scene_graph);
-            draw(neural_pipeline->get_result());
+            draw(neural_pipeline->get_result_view(), neural_pipeline->get_result_sampler());
             if (neural_pipeline->debug_dump_complete()) {
                 // --nn-debug-dump: after the neural frame, render the
                 // normal PPLL path on the SAME camera and capture it for
@@ -356,6 +356,56 @@ namespace vkhr {
             for (auto& hair_style : hair_node->get_hair_styles())
                 hair_styles[hair_style].draw_volume(pipeline, pipeline.descriptor_sets[frame], command_buffer);
         }
+    }
+
+    void Rasterizer::draw(vk::ImageView& fullscreen_view, vk::Sampler& fullscreen_sampler) {
+        command_buffer_finished[frame].wait_and_reset();
+        imgui.record_performance(query_pools[frame].request_timestamp_queries());
+
+        auto frame_image = swap_chain.acquire_next_image(image_available[frame]);
+
+        if (swap_chain.out_of_date()) {
+            swapchain_dirty = true;
+            return;
+        }
+
+        command_buffers[frame].begin();
+
+        command_buffers[frame].reset_query_pool(query_pools[frame], 0, // performance.
+                                                query_pools[frame].get_query_count());
+
+        fullscreen_billboard.send_img(billboards_pipeline.descriptor_sets[frame],
+                                      fullscreen_view, fullscreen_sampler, command_buffers[frame]);
+
+        vk::DebugMarker::begin(command_buffers[frame], "Blit Framebuffer", query_pools[frame]);
+        command_buffers[frame].begin_render_pass(imgui_pass, framebuffers[frame],
+                                                 { 1.00f, 1.00f, 1.00f, 1.00f });
+
+        command_buffers[frame].bind_pipeline(billboards_pipeline);
+        camera[frame].update(Camera::IdentityVPMatrix);
+        command_buffers[frame].push_constant(billboards_pipeline, 0, Identity);
+        fullscreen_billboard.draw(billboards_pipeline, billboards_pipeline.descriptor_sets[frame],
+                                  command_buffers[frame]);
+
+        imgui.draw(command_buffers[frame]);
+
+        command_buffers[frame].next_subpass(); // Just an empty subpass to make them compatible...
+
+        command_buffers[frame].end_render_pass();
+        vk::DebugMarker::close(command_buffers[frame], "Blit Framebuffer", query_pools[frame]);
+
+        command_buffers[frame].end();
+
+        device.get_graphics_queue().submit(command_buffers[frame], image_available[frame],
+                                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                           render_complete[frame], command_buffer_finished[frame]);
+        device.get_present_queue().present(swap_chain, frame_image, render_complete[frame]);
+
+        if (swap_chain.out_of_date())
+            swapchain_dirty = true;
+
+        latest_drawn_frame = frame;
+        frame = fetch_next_frame();
     }
 
     void Rasterizer::draw(Image& fullscreen_image) {
