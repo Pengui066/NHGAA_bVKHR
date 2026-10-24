@@ -1,6 +1,7 @@
 #include <vkhr/arg_parser.hh>
 
 #include <cstdlib>
+#include <iostream>
 
 namespace vkhr {
     ArgParser::ArgParser(const std::vector<Argument>& arguments) {
@@ -55,6 +56,19 @@ namespace vkhr {
                 }
 
             }
+        }
+
+        // The parser stops at the first non-flag token (the scene file),
+        // so any flags after it are silently ignored. Warn instead of
+        // letting a scene-first invocation run with zero parsed flags.
+        if (!parse_tail.empty() && current_argument < argument_count) {
+            for (int tail { current_argument }; tail < argument_count; ++tail)
+                if (std::string { argument_values[tail] }.rfind("--", 0) == 0) {
+                    std::cerr << "vkhr: arguments after '" << parse_tail
+                              << "' are ignored — put flags before the scene file"
+                              << std::endl;
+                    break;
+                }
         }
 
         return parse_tail;
