@@ -11,7 +11,9 @@
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 namespace vk = vkpp;
 
@@ -68,10 +70,42 @@ namespace vkhr {
         struct FrameTiming {
             double render_ms       { 0.0 }; // shadows + G-buffer + background.
             double readback_ms     { 0.0 }; // host readback + fp16->fp32 + sanitize.
-            NeuralReconstruct::Timing neural;
+            double nn_ms           { 0.0 }; // the whole network call window.
+            NeuralReconstruct::Timing neural; // module detail: pack/inference/unpack.
             double upload_shade_ms { 0.0 }; // upload recon + shading + result readback.
             double result_convert_ms { 0.0 }; // shaded RGBA32F -> RGBA8 on the host.
             double total_ms        { 0.0 };
+        };
+
+        // S4-0: running mean + p95 over sampled frames. The segments
+        // are CONTIGUOUS and exhaustive by construction, so their
+        // means must sum to the total mean.
+        struct TimingStats {
+            double render_sum { 0.0 }, readback_sum { 0.0 }, nn_sum { 0.0 };
+            double upload_sum { 0.0 }, result_sum { 0.0 }, total_sum { 0.0 };
+            std::vector<double> total_samples;
+            unsigned samples { 0 };
+
+            void record(const FrameTiming& timing) {
+                render_sum += timing.render_ms;
+                readback_sum += timing.readback_ms;
+                nn_sum += timing.nn_ms;
+                upload_sum += timing.upload_shade_ms;
+                result_sum += timing.result_convert_ms;
+                total_sum += timing.total_ms;
+                total_samples.push_back(timing.total_ms);
+                samples += 1;
+            }
+
+            double mean(double sum) const { return samples ? sum / samples : 0.0; }
+            double p95() const {
+                if (total_samples.empty()) return 0.0;
+                auto sorted = total_samples;
+                std::size_t index = std::size_t(0.95 * (sorted.size() - 1));
+                std::nth_element(sorted.begin(), sorted.begin() + index, sorted.end());
+                return sorted[index];
+            }
+            double fps() const { return 1000.0 / mean(total_sum); }
         };
 
         NeuralPipeline(Rasterizer& renderer, const Options& options);
@@ -208,6 +242,7 @@ namespace vkhr {
 
             Image result; // CPU RGBA8 image presented to the swapchain.
             FrameTiming last_timing_;
+            TimingStats stats_;
             unsigned frame_index { 0 };
             bool debug_dump_complete_ { false };
             bool debug_dump_written_ { false };

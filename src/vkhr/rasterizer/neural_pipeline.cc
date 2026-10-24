@@ -914,6 +914,8 @@ namespace vkhr {
                        last_timing_.neural);
 
             const auto upload_start = clock::now();
+            last_timing_.nn_ms = std::chrono::duration<double, std::milli>
+                                 (upload_start - readback_end).count();
 
             // Pack the reconstructed channels back into fp16, writing the
             // persistently mapped upload buffers element by element through
@@ -1031,11 +1033,13 @@ namespace vkhr {
                     }
                 }
             }
+            const auto convert_end = clock::now();
             last_timing_.result_convert_ms = std::chrono::duration<double, std::milli>
-                                             (clock::now() - convert_start).count();
+                                             (convert_end - shade_end).count();
 
             last_timing_.total_ms = std::chrono::duration<double, std::milli>
-                                    (clock::now() - total_start).count();
+                                    (convert_end - total_start).count();
+            stats_.record(last_timing_);
 
             if (frame_index == 0 && !options.debug_dump_directory.empty()
                 && !debug_dump_written_) {
@@ -1052,10 +1056,29 @@ namespace vkhr {
                 std::cerr << "[nn] frame " << frame_index
                           << " | render " << last_timing_.render_ms << " ms"
                           << " | readback " << last_timing_.readback_ms << " ms"
-                          << " | nn " << last_timing_.neural.inference_ms << " ms"
+                          << " | nn " << last_timing_.nn_ms << " ms"
+                          << " (pack " << last_timing_.neural.pack_ms
+                          << " + inf " << last_timing_.neural.inference_ms
+                          << " + unpack " << last_timing_.neural.unpack_ms << ")"
                           << " | upload+shade " << last_timing_.upload_shade_ms << " ms"
                           << " | result " << last_timing_.result_convert_ms << " ms"
                           << " | total " << last_timing_.total_ms << " ms" << std::endl;
+            }
+
+            if (frame_index % 100 == 0) {
+                double sum = stats_.mean(stats_.render_sum) + stats_.mean(stats_.readback_sum)
+                           + stats_.mean(stats_.nn_sum) + stats_.mean(stats_.upload_sum)
+                           + stats_.mean(stats_.result_sum);
+                std::cerr << "[nn] stats @" << frame_index << " frames: "
+                          << "render " << stats_.mean(stats_.render_sum)
+                          << " | readback " << stats_.mean(stats_.readback_sum)
+                          << " | nn " << stats_.mean(stats_.nn_sum)
+                          << " | upload+shade " << stats_.mean(stats_.upload_sum)
+                          << " | result " << stats_.mean(stats_.result_sum)
+                          << " | total " << stats_.mean(stats_.total_sum)
+                          << " | segment-sum " << sum
+                          << " | total p95 " << stats_.p95()
+                          << " | fps " << stats_.fps() << std::endl;
             }
         }
 
