@@ -20,7 +20,8 @@ def main():
     with open(options.profile, encoding="utf-8") as f:
         data = json.load(f)
 
-    events = data.get("traceEvents", [])
+    # ORT writes either {"traceEvents": [...]} or a bare event list.
+    events = data if isinstance(data, list) else data.get("traceEvents", [])
     # Node events are the per-op records; their dur is in microseconds.
     node_events = [e for e in events if e.get("cat") == "Node"
                    and "dur" in e and "name" in e]
