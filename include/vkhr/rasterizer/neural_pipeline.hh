@@ -65,6 +65,10 @@ namespace vkhr {
             // 2 = k-layer accumulation 1-(1-c*hair_alpha)^alpha_layers.
             float alpha_mode   { 2.0f };
             float alpha_layers { 16.0f };
+
+            // S4-0.4: when non-empty, the ORT session runs with
+            // EnableProfiling and writes a chrome-trace JSON here.
+            std::string profile_path;
         };
 
         struct FrameTiming {

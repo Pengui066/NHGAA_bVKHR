@@ -28,7 +28,8 @@ namespace vkhr::vulkan {
         };
 
         NeuralReconstruct(const std::string& model_path,
-                          std::uint32_t width, std::uint32_t height);
+                          std::uint32_t width, std::uint32_t height,
+                          const std::string& profile_path = "");
         ~NeuralReconstruct();
 
         NeuralReconstruct(const NeuralReconstruct&) = delete;

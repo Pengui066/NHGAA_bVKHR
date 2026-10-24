@@ -102,7 +102,8 @@ namespace vkhr {
                                          options { pipeline_options },
                                          neural { pipeline_options.model_path,
                                                   vulkan_renderer.swap_chain.get_width(),
-                                                  vulkan_renderer.swap_chain.get_height() } {
+                                                  vulkan_renderer.swap_chain.get_height(),
+                                                  pipeline_options.profile_path } {
             if (renderer.hair_styles.empty())
                 throw std::runtime_error {
                     "vkhr: the neural reconstruction mode requires a scene "

@@ -30,7 +30,8 @@ namespace vkhr::vulkan {
     class NeuralReconstruct::Implementation {
     public:
         Implementation(const std::string& model_path,
-                       std::uint32_t width, std::uint32_t height)
+                       std::uint32_t width, std::uint32_t height,
+                       const std::string& profile_path)
             : width_ { width }, height_ { height } {
             input_.resize(4 * std::size_t(width) * height);
             input_shape_ = { 1, 4, static_cast<std::int64_t>(height),
@@ -50,6 +51,21 @@ namespace vkhr::vulkan {
             Ort::SessionOptions cuda_options;
             cuda_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
+            // S4-0.4: optional ORT profiling (chrome-trace JSON, finalized
+            // when the session is destroyed).
+            #ifdef _WIN32
+                std::wstring profile_wide;
+            #endif
+            if (!profile_path.empty()) {
+                #ifdef _WIN32
+                    profile_wide.assign(profile_path.begin(), profile_path.end());
+                    cuda_options.EnableProfiling(profile_wide.c_str());
+                #else
+                    cuda_options.EnableProfiling(profile_path.c_str());
+                #endif
+                std::cerr << "[nn] ORT profiling enabled: " << profile_path << std::endl;
+            }
+
             // Append the CUDA provider through the C API: the C++ wrapper
             // only exposes the deprecated V1 options overload.
             OrtCUDAProviderOptionsV2 provider_options { };
@@ -68,13 +84,20 @@ namespace vkhr::vulkan {
 
             try {
                 session_ = Ort::Session { env_, model_argument, cuda_options };
-                std::cerr << "[nn] ONNX Runtime ready (CUDA EP): " << model_path
+                std::cerr << "[nn] ONNX Runtime ready (CUDA EP, device 0): " << model_path
                           << " @ " << width << "x" << height << std::endl;
             } catch (const Ort::Exception& exception) {
                 std::cerr << "[nn] CUDA EP unavailable (" << exception.what()
                           << "); falling back to CPU" << std::endl;
                 Ort::SessionOptions cpu_options;
                 cpu_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+                if (!profile_path.empty()) {
+                    #ifdef _WIN32
+                        cpu_options.EnableProfiling(profile_wide.c_str());
+                    #else
+                        cpu_options.EnableProfiling(profile_path.c_str());
+                    #endif
+                }
                 session_ = Ort::Session { env_, model_argument, cpu_options };
                 std::cerr << "[nn] ONNX Runtime ready (CPU EP): " << model_path
                           << " @ " << width << "x" << height << std::endl;
@@ -146,9 +169,11 @@ namespace vkhr::vulkan {
     };
 
     NeuralReconstruct::NeuralReconstruct(const std::string& model_path,
-                                         std::uint32_t width, std::uint32_t height)
+                                         std::uint32_t width, std::uint32_t height,
+                                         const std::string& profile_path)
         : width_ { width }, height_ { height },
-          implementation_ { std::make_unique<Implementation>(model_path, width, height) } {
+          implementation_ { std::make_unique<Implementation>(model_path, width, height,
+                                                             profile_path) } {
     }
 
     NeuralReconstruct::~NeuralReconstruct() = default;

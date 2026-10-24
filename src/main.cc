@@ -94,6 +94,7 @@ int main(int argc, char** argv) {
             options.disable_occlusion = argp["nn-no-occlusion"].value.boolean == 1;
             options.alpha_mode = argp["nn-alpha-mode"].value.floating;
             options.alpha_layers = argp["nn-alpha-layers"].value.floating;
+            options.profile_path = argp["nn-profile"].value.string;
             rasterizer.enable_neural_reconstruction(options);
         } catch (const std::exception& error) {
             std::cerr << "[nn exception] " << error.what() << std::endl;
