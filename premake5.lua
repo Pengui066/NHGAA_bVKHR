@@ -99,6 +99,7 @@ project (name)
 
         buildoptions { "/openmp", "/Zc:twoPhase-" }
 
+
         disablewarnings { "4201" }
 
         files { GLFW.."/include/GLFW/*.h" }
@@ -108,6 +109,11 @@ project (name)
         links { GLFW.."/lib/glfw3dll.lib" }
         links { EMBREE.."/lib/embree3.lib" }
         links { ORT.."/lib/onnxruntime.lib" }
+
+        -- S4-1b: the fp16 readback conversions use F16C intrinsics.
+        filter "files:src/vkhr/rasterizer/neural_pipeline.cc"
+            buildoptions { "/arch:AVX2" }
+
 
         -- Copy the ONNX Runtime redist DLLs (CUDA EP + its cudart/cublas/
         -- cudnn chain) next to the executable. The Gpu/ folder is local-only

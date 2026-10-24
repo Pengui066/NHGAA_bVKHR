@@ -11,6 +11,10 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <immintrin.h>
+#endif
+
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -83,6 +87,65 @@ namespace vkhr {
             std::uint32_t rounded = (unbiased << 10) | (mant >> 13);
             if (mant & 0x1000) rounded += 1;               // round to nearest.
             return sign | rounded;
+        }
+
+        // S4-1b: F16C/AVX2 conversions. The sanitize semantics match the
+        // scalar isfinite (ordered AND magnitude < FLT_MAX) exactly.
+        static inline void convert_coverage_simd(const std::uint16_t* halfs,
+                                                 float* out, std::size_t count) {
+        #if defined(_MSC_VER) && defined(_M_X64)
+            const __m256 float_max = _mm256_set1_ps(std::numeric_limits<float>::max());
+            const __m256i abs_mask = _mm256_set1_epi32(0x7FFFFFFF);
+            std::size_t i = 0;
+            for (; i + 16 <= count; i += 16) {
+                __m256i packed = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(halfs + i));
+                __m256 lo = _mm256_cvtph_ps(_mm256_castsi256_si128(packed));
+                __m256 hi = _mm256_cvtph_ps(_mm256_extracti128_si256(packed, 1));
+                __m256 abs_lo = _mm256_and_ps(lo, _mm256_castsi256_ps(abs_mask));
+                __m256 abs_hi = _mm256_and_ps(hi, _mm256_castsi256_ps(abs_mask));
+                __m256 mask_lo = _mm256_and_ps(_mm256_cmp_ps(lo, lo, _CMP_EQ_OQ),
+                                                _mm256_cmp_ps(abs_lo, float_max, _CMP_LT_OQ));
+                __m256 mask_hi = _mm256_and_ps(_mm256_cmp_ps(hi, hi, _CMP_EQ_OQ),
+                                                _mm256_cmp_ps(abs_hi, float_max, _CMP_LT_OQ));
+                _mm256_storeu_ps(out + i, _mm256_and_ps(lo, mask_lo));
+                _mm256_storeu_ps(out + i + 8, _mm256_and_ps(hi, mask_hi));
+            }
+            for (; i < count; ++i) {
+                float value = half_to_float(halfs[i]);
+                out[i] = std::isfinite(value) ? value : 0.0f;
+            }
+        #else
+            for (std::size_t i = 0; i < count; ++i) {
+                float value = half_to_float(halfs[i]);
+                out[i] = std::isfinite(value) ? value : 0.0f;
+            }
+        #endif
+        }
+
+        // RGBA16F -> planar xyz-per-pixel, SSE per pixel.
+        static inline void convert_tangent_simd(const std::uint16_t* halfs,
+                                                float* out, std::size_t count) {
+        #if defined(_MSC_VER) && defined(_M_X64)
+            const __m128 float_max = _mm_set1_ps(std::numeric_limits<float>::max());
+            const __m128i abs_mask = _mm_set1_epi32(0x7FFFFFFF);
+            for (std::size_t i = 0; i < count; ++i) {
+                __m128i packed = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(halfs + 4 * i));
+                __m128 values = _mm_cvtph_ps(packed);
+                __m128 abs = _mm_and_ps(values, _mm_castsi128_ps(abs_mask));
+                __m128 mask = _mm_and_ps(_mm_cmp_ps(values, values, _CMP_EQ_OQ),
+                                          _mm_cmp_ps(abs, float_max, _CMP_LT_OQ));
+                values = _mm_and_ps(values, mask);
+                _mm_store_ss(&out[3 * i + 0], values);
+                _mm_store_ss(&out[3 * i + 1], _mm_shuffle_ps(values, values, _MM_SHUFFLE(1, 1, 1, 1)));
+                _mm_store_ss(&out[3 * i + 2], _mm_shuffle_ps(values, values, _MM_SHUFFLE(2, 2, 2, 2)));
+            }
+        #else
+            for (std::size_t i = 0; i < count; ++i)
+                for (std::uint32_t c = 0; c < 3; ++c) {
+                    float value = half_to_float(halfs[4 * i + c]);
+                    out[3 * i + c] = std::isfinite(value) ? value : 0.0f;
+                }
+        #endif
         }
 
         static void set_opaque_blending(vk::GraphicsPipeline::FixedFunction& fixed_stages,
@@ -982,23 +1045,16 @@ namespace vkhr {
             half_staging.resize(2 * pixel_count);
             std::memcpy(half_staging.data(), target.coverage_mapped,
                         half_staging.size() * sizeof(std::uint16_t));
-            for (std::size_t i { 0 }; i < pixel_count; ++i) {
-                float value = half_to_float(half_staging[i]);
-                // Zero-length tangents normalize to NaN in the shader and
-                // coverage has the same failure mode; sanitize both before
-                // the network (contract: nan_to_num is the caller's
-                // responsibility, and it applies to ALL input channels).
-                coverage_f32[i] = std::isfinite(value) ? value : 0.0f;
-            }
+            // Zero-length tangents normalize to NaN in the shader and
+            // coverage has the same failure mode; sanitize both before
+            // the network (contract: nan_to_num is the caller's
+            // responsibility, and it applies to ALL input channels).
+            convert_coverage_simd(half_staging.data(), coverage_f32.data(), pixel_count);
 
             half_staging.resize(4 * pixel_count);
             std::memcpy(half_staging.data(), target.tangent_mapped,
                         half_staging.size() * sizeof(std::uint16_t));
-            for (std::size_t i { 0 }; i < pixel_count; ++i)
-                for (std::uint32_t c { 0 }; c < 3; ++c) {
-                    float value = half_to_float(half_staging[4 * i + c]);
-                    tangent_f32[3 * i + c] = std::isfinite(value) ? value : 0.0f;
-                }
+            convert_tangent_simd(half_staging.data(), tangent_f32.data(), pixel_count);
 
             // The readback window ends HERE: it covers only the host-side
             // staging and conversion, not the network run.
