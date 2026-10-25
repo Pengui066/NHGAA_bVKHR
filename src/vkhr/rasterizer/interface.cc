@@ -219,6 +219,27 @@ namespace vkhr {
                 ImGui::PopItemWidth();
             }
 
+            // ψ reconstruction toggle: only exists when the app started
+            // with --nn yes. OFF shades the raw 1spp G-buffer (the naive
+            // baseline) with the same shader and k=16 calibration; the
+            // toggle needs no pipeline/texture/engine rebuild. On the
+            // PPLL side (N key) the stored state simply persists until
+            // the neural path is re-enabled.
+            if (!rasterizer.get_neural_options().model_path.empty()) {
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                bool reconstruct = rasterizer.neural_reconstruct_enabled();
+                if (ImGui::Checkbox("Neural reconstruct", &reconstruct))
+                    rasterizer.set_neural_reconstruct(reconstruct);
+
+                const auto& nn_options = rasterizer.get_neural_options();
+                ImGui::SameLine(0.0f, 16.0f);
+                ImGui::Text("EP: %s%s", nn_options.provider.c_str(),
+                            nn_options.fp16 ? " (fp16)" : "");
+            }
+
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();

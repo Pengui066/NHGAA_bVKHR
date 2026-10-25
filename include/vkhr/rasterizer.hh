@@ -78,6 +78,13 @@ namespace vkhr {
         void toggle_neural_reconstruction();
         bool neural_reconstruction_enabled() const;
 
+        // ψ toggle (imgui checkbox): syncs the stored options (which
+        // survive N toggles and swapchain recreation) and the live
+        // pipeline — no rebuild on either side.
+        void set_neural_reconstruct(bool enabled);
+        bool neural_reconstruct_enabled() const;
+        const vulkan::NeuralPipeline::Options& get_neural_options() const { return neural_options; }
+
         struct Benchmark {
             std::string description;
             std::string scene;

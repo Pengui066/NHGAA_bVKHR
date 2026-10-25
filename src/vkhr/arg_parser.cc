@@ -221,5 +221,7 @@ namespace vkhr {
         { "nn-profile",     Argument::Type::String,   Argument::make_string(""),       "" },
         { "nn-provider",    Argument::Type::String,   Argument::make_string("cuda"),   "" },
         { "nn-fp16",        Argument::Type::Boolean,  Argument::make_boolean(false),   "" },
+        { "nn-reconstruct", Argument::Type::Boolean,  Argument::make_boolean(true),    "" },
+        { "nn-toggle-stress", Argument::Type::Boolean, Argument::make_boolean(false),  "" },
     };
 }

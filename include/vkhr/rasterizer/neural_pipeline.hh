@@ -77,6 +77,12 @@ namespace vkhr {
             std::string provider { "cuda" };
             bool        fp16     { false }; // TRT-only precision switch.
             std::string trt_cache_dir { "runs/trt_cache" };
+
+            // ψ-reconstruction toggle (imgui checkbox): when false, the
+            // frame skips the whole neural block (readback, conversion,
+            // Psi inference, recon upload) and the deferred shading reads
+            // the raw 1spp G-buffer directly — the naive 1spp baseline.
+            bool neural_reconstruct { true };
         };
 
         struct FrameTiming {
@@ -133,6 +139,12 @@ namespace vkhr {
 
         const FrameTiming& last_timing() const { return last_timing_; }
         const NeuralReconstruct& get_neural() const { return neural; }
+
+        // ψ toggle (imgui checkbox): no rebuild — only the per-frame
+        // host block and the shading descriptor selection change.
+        void set_neural_reconstruct(bool enabled) { options.neural_reconstruct = enabled; }
+        bool neural_reconstruct_enabled() const { return options.neural_reconstruct; }
+        const Options& get_options() const { return options; }
 
         // True once the --nn-debug-dump frame has been written (the
         // render loop should close the window afterwards).

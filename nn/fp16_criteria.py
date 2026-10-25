@@ -45,7 +45,9 @@ def make_session(fp16: bool) -> ort.InferenceSession:
         "trt_fp16_enable": "True" if fp16 else "False",
         "trt_engine_cache_enable": "True",
         "trt_engine_cache_path": str(CACHE),
-        "trt_builder_optimization_level": "2",  # parity with the C++ --nn-provider trt
+        "trt_builder_optimization_level": "2",
+        "trt_timing_cache_enable": "True",
+        "trt_timing_cache_path": str(CACHE),  # parity with the C++ --nn-provider trt
     }
     return ort.InferenceSession(
         str(MODEL), ort.SessionOptions(),

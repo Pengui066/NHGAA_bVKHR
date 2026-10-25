@@ -99,6 +99,7 @@ int main(int argc, char** argv) {
             options.profile_path = argp["nn-profile"].value.string;
             options.provider     = argp["nn-provider"].value.string;
             options.fp16         = argp["nn-fp16"].value.boolean == 1;
+            options.neural_reconstruct = argp["nn-reconstruct"].value.boolean == 1;
             rasterizer.enable_neural_reconstruction(options);
         } catch (const std::exception& error) {
             std::cerr << "[nn exception] " << error.what() << std::endl;
@@ -198,6 +199,22 @@ int main(int argc, char** argv) {
             rasterizer.draw(framebuffer);
         } else {
             rasterizer.draw(scene_graph); // 真正的渲染操作只有这一句
+        }
+
+        // --nn-toggle-stress (gate 3 of the ψ-toggle feature): flip the
+        // reconstruction every 10 frames, and every 100 frames rebuild
+        // the whole neural pipeline (disable + enable) to exercise the
+        // swapchain-recreation path with the persisted flag.
+        if (argp["nn-toggle-stress"].value.boolean == 1
+            && rasterizer.neural_reconstruction_enabled()) {
+            static int stress_frame = 0;
+            stress_frame += 1;
+            if (stress_frame % 10 == 0)
+                rasterizer.set_neural_reconstruct(!rasterizer.neural_reconstruct_enabled());
+            if (stress_frame % 100 == 0) {
+                rasterizer.toggle_neural_reconstruction();
+                rasterizer.toggle_neural_reconstruction();
+            }
         }
 
         // Benchmark the renderer and dump timings.

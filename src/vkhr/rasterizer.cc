@@ -607,6 +607,16 @@ namespace vkhr {
         neural_pipeline = nullptr;
     }
 
+    void Rasterizer::set_neural_reconstruct(bool enabled) {
+        neural_options.neural_reconstruct = enabled;
+        if (neural_pipeline)
+            neural_pipeline->set_neural_reconstruct(enabled);
+    }
+
+    bool Rasterizer::neural_reconstruct_enabled() const {
+        return neural_options.neural_reconstruct;
+    }
+
     void Rasterizer::toggle_neural_reconstruction() {
         if (neural_pipeline)
             disable_neural_reconstruction();

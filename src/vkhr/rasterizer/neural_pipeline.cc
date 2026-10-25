@@ -551,7 +551,10 @@ namespace vkhr {
                 renderer.device, shading_bindings
             };
 
-            shading_pipeline.descriptor_sets = renderer.descriptor_pool.allocate(1,
+            // Two descriptor sets: [0] samples the reconstructed channels,
+            // [1] samples the raw 1spp G-buffer (ψ toggle OFF). Both are
+            // written once here; the per-frame choice needs no rebuild.
+            shading_pipeline.descriptor_sets = renderer.descriptor_pool.allocate(2,
                                                                                  shading_pipeline.descriptor_set_layout,
                                                                                  "Neural Deferred Shading Descriptor Set");
 
@@ -635,6 +638,9 @@ namespace vkhr {
             shading_pipeline.descriptor_sets[0].write(0, camera_buffer[0]);
             shading_pipeline.descriptor_sets[0].write(1, renderer.lights[0]);
             shading_pipeline.descriptor_sets[0].write(4, renderer.params[0]);
+            shading_pipeline.descriptor_sets[1].write(0, camera_buffer[0]);
+            shading_pipeline.descriptor_sets[1].write(1, renderer.lights[0]);
+            shading_pipeline.descriptor_sets[1].write(4, renderer.params[0]);
 
             for (std::uint32_t i { 0 }; i < light_count; ++i) {
                 background_pipeline.descriptor_sets[0].write(9 + i,
@@ -643,18 +649,23 @@ namespace vkhr {
                 shading_pipeline.descriptor_sets[0].write(9 + i,
                                                           renderer.shadow_maps[i].get_image_view(),
                                                           renderer.shadow_maps[i].get_sampler());
+                shading_pipeline.descriptor_sets[1].write(9 + i,
+                                                          renderer.shadow_maps[i].get_image_view(),
+                                                          renderer.shadow_maps[i].get_sampler());
             }
         }
 
         void NeuralPipeline::write_descriptors() {
             // Like the dump mode, the deferred shading pass shades a single
-            // hair style: the first one found in the scene. The coverage/
-            // tangent bindings point at the RECONSTRUCTED channels - or at
-            // the raw input channels in the --nn-shade-input debug mode,
-            // which isolates the network's effect on the shaded image.
+            // hair style: the first one found in the scene. Set [0] samples
+            // the RECONSTRUCTED channels (or the raw input channels in the
+            // --nn-shade-input debug mode, which isolates the network's
+            // effect on the shaded image); set [1] always samples the raw
+            // 1spp G-buffer and backs the ψ-toggle OFF position.
             auto& style = renderer.hair_styles.begin()->second;
 
             shading_pipeline.descriptor_sets[0].write(2, style.parameter_buffer);
+            shading_pipeline.descriptor_sets[1].write(2, style.parameter_buffer);
             if (options.shade_input_channels) {
                 shading_pipeline.descriptor_sets[0].write(3, target.coverage.view, gbuffer_sampler);
                 shading_pipeline.descriptor_sets[0].write(5, target.tangent.view, gbuffer_sampler);
@@ -662,9 +673,15 @@ namespace vkhr {
                 shading_pipeline.descriptor_sets[0].write(3, target.coverage_recon.view, gbuffer_sampler);
                 shading_pipeline.descriptor_sets[0].write(5, target.tangent_recon.view, gbuffer_sampler);
             }
+            shading_pipeline.descriptor_sets[1].write(3, target.coverage.view, gbuffer_sampler);
+            shading_pipeline.descriptor_sets[1].write(5, target.tangent.view, gbuffer_sampler);
+
             shading_pipeline.descriptor_sets[0].write(6, target.depth.view, gbuffer_sampler);
             shading_pipeline.descriptor_sets[0].write(7, target.background.view, gbuffer_sampler);
             shading_pipeline.descriptor_sets[0].write(8, style.density_view, style.density_sampler);
+            shading_pipeline.descriptor_sets[1].write(6, target.depth.view, gbuffer_sampler);
+            shading_pipeline.descriptor_sets[1].write(7, target.background.view, gbuffer_sampler);
+            shading_pipeline.descriptor_sets[1].write(8, style.density_view, style.density_sampler);
 
             // S4-1a: the convert pass samples the shaded RGBA32F result.
             convert_pipeline.descriptor_sets[0].write(1, target.shaded.view, gbuffer_sampler);
@@ -972,7 +989,8 @@ namespace vkhr {
             };
             command_buffer.push_constant(shading_pipeline, 0, push_constants);
 
-            command_buffer.bind_descriptor_set(shading_pipeline.descriptor_sets[0],
+            command_buffer.bind_descriptor_set(shading_pipeline.descriptor_sets[
+                                                   options.neural_reconstruct ? 0 : 1],
                                                shading_pipeline);
 
             command_buffer.draw(3); // fullscreen triangle.
@@ -1017,11 +1035,15 @@ namespace vkhr {
                                             VK_PIPELINE_STAGE_TRANSFER_BIT);
             };
 
-            transition_to_source(target.coverage);
-            transition_to_source(target.tangent);
-
-            command_buffer.copy_image_to_buffer(target.coverage.image, target.coverage_buffer);
-            command_buffer.copy_image_to_buffer(target.tangent.image, target.tangent_buffer);
+            if (options.neural_reconstruct) {
+                transition_to_source(target.coverage);
+                transition_to_source(target.tangent);
+                command_buffer.copy_image_to_buffer(target.coverage.image, target.coverage_buffer);
+                command_buffer.copy_image_to_buffer(target.tangent.image, target.tangent_buffer);
+            }
+            // ψ OFF: no readback copies — the images stay in the render
+            // pass's final SHADER_READ_ONLY layout, exactly what the
+            // shading pass samples.
 
             if (!options.debug_dump_directory.empty()) {
                 target.depth.image.transition(command_buffer,
@@ -1043,8 +1065,19 @@ namespace vkhr {
             // ---- host: readback, fp16 -> fp32 + sanitize, inference ----
             const std::size_t pixel_count = std::size_t(target.width) * target.height;
 
-            std::vector<float> coverage_f32(pixel_count), tangent_f32(3 * pixel_count);
-            std::vector<float> recon_coverage_f32(pixel_count), recon_tangent_f32(3 * pixel_count);
+            std::vector<float> coverage_f32, tangent_f32;
+            std::vector<float> recon_coverage_f32, recon_tangent_f32;
+
+            // The ψ-toggle OFF position skips this whole block; the skipped
+            // segments record 0 and the upload+shade window covers the
+            // shading pass alone, keeping the segment sum == total.
+            auto upload_start = nn_start;
+
+            if (options.neural_reconstruct) {
+            coverage_f32.resize(pixel_count);
+            tangent_f32.resize(3 * pixel_count);
+            recon_coverage_f32.resize(pixel_count);
+            recon_tangent_f32.resize(3 * pixel_count);
             std::vector<std::uint16_t> half_staging;
 
             // Stage the BAR-mapped buffers through one wide memcpy each:
@@ -1077,7 +1110,7 @@ namespace vkhr {
                        recon_coverage_f32.data(), recon_tangent_f32.data(),
                        last_timing_.neural);
 
-            const auto upload_start = clock::now();
+            upload_start = clock::now();
             last_timing_.nn_ms = std::chrono::duration<double, std::milli>
                                  (upload_start - readback_end).count();
 
@@ -1105,10 +1138,16 @@ namespace vkhr {
                     halfs[4 * i + 3] = 0;
                 }
             }
+            } else {
+                last_timing_.readback_ms = 0.0;
+                last_timing_.nn_ms = 0.0;
+                last_timing_.neural = { };
+            }
 
             // ---- command buffer 2: upload recon + shade + readback ----
             auto upload_buffer = renderer.command_pool.allocate_and_begin();
 
+            if (options.neural_reconstruct) {
             VkImageLayout recon_old_layout = frame_index == 0
                                            ? VK_IMAGE_LAYOUT_UNDEFINED
                                            : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1139,11 +1178,12 @@ namespace vkhr {
                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                                   VK_PIPELINE_STAGE_TRANSFER_BIT,
                                                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            }
 
             // The --nn-shade-input debug mode samples the RAW input images
             // in the shading pass; bring them back from the transfer
             // layout cmd1 left them in.
-            if (options.shade_input_channels) {
+            if (options.shade_input_channels && options.neural_reconstruct) {
                 target.coverage.image.transition(upload_buffer,
                                                  VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
                                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -1310,13 +1350,18 @@ namespace vkhr {
             };
 
             const std::size_t pixel_count = std::size_t(target.width) * target.height;
-            write_raw("coverage_readback.f16", target.coverage_mapped, pixel_count * 2);
-            write_raw("tangent_readback.f16", target.tangent_mapped, pixel_count * 8);
+            // The ψ-toggle OFF position never fills the readback/recon
+            // buffers (the BAR copies are skipped), so those files are
+            // only meaningful with the reconstruction enabled.
+            if (options.neural_reconstruct) {
+                write_raw("coverage_readback.f16", target.coverage_mapped, pixel_count * 2);
+                write_raw("tangent_readback.f16", target.tangent_mapped, pixel_count * 8);
+                write_raw("coverage_decoded.f32", coverage_f32.data(), pixel_count * 4);
+                write_raw("tangent_decoded.f32", tangent_f32.data(), 3 * pixel_count * 4);
+                write_raw("recon_coverage.f32", recon_coverage.data(), pixel_count * 4);
+                write_raw("recon_tangent.f32", recon_tangent.data(), 3 * pixel_count * 4);
+            }
             write_raw("depth_readback.f32", target.depth_mapped, pixel_count * 4);
-            write_raw("coverage_decoded.f32", coverage_f32.data(), pixel_count * 4);
-            write_raw("tangent_decoded.f32", tangent_f32.data(), 3 * pixel_count * 4);
-            write_raw("recon_coverage.f32", recon_coverage.data(), pixel_count * 4);
-            write_raw("recon_tangent.f32", recon_tangent.data(), 3 * pixel_count * 4);
             write_raw("shaded.f32", target.shaded_mapped, 4 * pixel_count * 4);
 
             auto& style = renderer.hair_styles.begin()->second;
