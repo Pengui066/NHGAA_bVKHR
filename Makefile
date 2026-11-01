@@ -41,6 +41,8 @@ program: FORCE
 shaders: FORCE
 	@-utils/glslc.py share/shaders/billboards
 	@-make --no-print-directory -C share/shaders/billboards
+	@-utils/glslc.py share/shaders/gbuffer
+	@-make --no-print-directory -C share/shaders/gbuffer
 	@-utils/glslc.py share/shaders/models
 	@-make --no-print-directory -C share/shaders/models
 	@-utils/glslc.py share/shaders/self-shadowing
