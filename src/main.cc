@@ -108,6 +108,19 @@ int main(int argc, char** argv) {
 
     auto& imgui = rasterizer.get_imgui();
 
+    // P1: view-direction transmittance, CLI overrides. The parser defaults
+    // mirror the struct defaults in interface.hh exactly, so an unset flag
+    // leaves the parameters untouched. The live path uploads these every
+    // frame (Rasterizer::update); the shade path uploads the P1 tail in
+    // ShadeDump::run.
+    imgui.parameters.p1_enabled     = argp["p1"].value.boolean;
+    imgui.parameters.p1_sigma       = argp["p1-sigma"].value.floating;
+    imgui.parameters.p1_march_steps = argp["p1-march-steps"].value.integer;
+    imgui.parameters.p1_t_max       = argp["p1-t-max"].value.floating;
+    imgui.parameters.p1_deep_r      = argp["p1-deep-r"].value.floating;
+    imgui.parameters.p1_deep_g      = argp["p1-deep-g"].value.floating;
+    imgui.parameters.p1_deep_b      = argp["p1-deep-b"].value.floating;
+
     // The dump mode runs fully offline: keep the window hidden and exit
     // as soon as the last frame has been written to disk.
     bool dump_mode = argp["dump"].value.boolean == 1;
