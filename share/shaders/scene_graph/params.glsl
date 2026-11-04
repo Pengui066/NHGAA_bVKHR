@@ -30,6 +30,16 @@ layout(binding = 4) uniform Params {
     float minified_distance;
 
     int benchmarking;
+
+    // P1: view-direction transmittance (the thickness approximation).
+    // Appended at the tail so every pre-existing field keeps its offset.
+    int p1_enabled;
+    float p1_sigma;
+    int p1_march_steps;
+    float p1_t_max;
+    float p1_deep_r;
+    float p1_deep_g;
+    float p1_deep_b;
 };
 
 #endif

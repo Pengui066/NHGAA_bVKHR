@@ -15,6 +15,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <cstring>
 
 namespace vkhr {
     namespace vulkan {
@@ -406,7 +407,13 @@ namespace vkhr {
                           << " adsm_on " << p.adsm_on
                           << " ctsm_k " << p.ctsm_kernel_size << " ctsm_on " << p.ctsm_on
                           << " occ_radius " << p.occlusion_radius
-                          << " ao_exp " << p.ao_exponent << " ao_clamp " << p.ao_clamp << std::endl;
+                          << " ao_exp " << p.ao_exponent << " ao_clamp " << p.ao_clamp
+                          << " p1 " << p.p1_enabled
+                          << " sigma " << p.p1_sigma
+                          << " steps " << p.p1_march_steps
+                          << " tmax " << p.p1_t_max
+                          << " deep [" << p.p1_deep_r << ", " << p.p1_deep_g
+                          << ", " << p.p1_deep_b << "]" << std::endl;
                 for (auto& light_source : scene_graph.light_sources) {
                     auto direction = light_source.get_direction();
                     auto intensity = light_source.get_intensity();
@@ -427,6 +434,23 @@ namespace vkhr {
             for (std::uint32_t j { 0 }; j < renderer.shadow_maps.size(); ++j)
                 descriptor_set.write(9 + j, renderer.shadow_maps[j].get_image_view(),
                                      renderer.shadow_maps[j].get_sampler());
+
+            // The live path uploads the rendering parameters every frame
+            // (Rasterizer::update), but the shade path never draws, so
+            // the UBO would otherwise hold uninitialized memory. Upload a
+            // deterministic copy: the legacy fields stay zero (matching
+            // the historical shade outputs bit-for-bit), while the P1
+            // tail carries the current values (CLI overrides included).
+            Interface::Parameters shade_parameters;
+            std::memset(&shade_parameters, 0, sizeof(shade_parameters));
+            shade_parameters.p1_enabled     = renderer.imgui.parameters.p1_enabled;
+            shade_parameters.p1_sigma       = renderer.imgui.parameters.p1_sigma;
+            shade_parameters.p1_march_steps = renderer.imgui.parameters.p1_march_steps;
+            shade_parameters.p1_t_max       = renderer.imgui.parameters.p1_t_max;
+            shade_parameters.p1_deep_r      = renderer.imgui.parameters.p1_deep_r;
+            shade_parameters.p1_deep_g      = renderer.imgui.parameters.p1_deep_g;
+            shade_parameters.p1_deep_b      = renderer.imgui.parameters.p1_deep_b;
+            renderer.params[0].update(shade_parameters);
 
             std::string source_dir = options.dump_directory + "/" + options.source;
             std::string input_dir = options.dump_directory + "/input";

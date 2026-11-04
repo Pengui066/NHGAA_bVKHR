@@ -83,6 +83,18 @@ namespace vkhr {
             float lod_minified_distance;
 
             int benchmarking;
+
+            // P1: view-direction transmittance. Must mirror the tail of
+            // the Params UBO in share/shaders/scene_graph/params.glsl
+            // (layout there: int/float/int/float + 3 floats; no vec3, so
+            // std140 offsets match this struct byte for byte).
+            int p1_enabled;
+            float p1_sigma;
+            int p1_march_steps;
+            float p1_t_max;
+            float p1_deep_r;
+            float p1_deep_g;
+            float p1_deep_b;
         } parameters {
             KajiyaKay,
 
@@ -108,7 +120,13 @@ namespace vkhr {
             Renderer::Type::Rasterizer,
             800.0,
 
-            false
+            false,
+
+            false,                       // p1_enabled: off by default.
+            8.0f,                        // p1_sigma
+            16,                          // p1_march_steps
+            0.30f,                       // p1_t_max
+            0.03f, 0.015f, 0.005f        // p1_deep_r/g/b: warm deep brown.
         };
 
         void default_parameters();

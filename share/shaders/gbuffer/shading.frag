@@ -95,5 +95,27 @@ void main() {
         alpha = 1.0f - pow(max(1.0f - alpha, 0.0f), inverse_vp.alpha_layers);
     }
 
-    color = vec4(mix(background.rgb, shading * occlusion, alpha), 1.0f);
+    // P1: view-direction transmittance darkening (thickness approximation,
+    // a two-level simplification of Zinke's global-scattering idea). Rays
+    // march from the frontmost fragment along the view ray into the
+    // strand-density volume; the accumulated optical depth darkens the
+    // hair and blends in a warm deep-ambient term, so dense cores read
+    // as layered volume instead of a thin shell. Disabled (p1_enabled ==
+    // NO) this is bit-identical to the pre-P1 composite.
+    float p1_tau = 0.0f;
+    if (p1_enabled == YES) {
+        float dt = p1_t_max / float(p1_march_steps);
+        for (int i = 1; i <= p1_march_steps; ++i) {
+            vec3 sp = position + eye_direction * (float(i) * dt);
+            p1_tau += sample_volume(strand_density, sp,
+                                    volume_bounds.origin, volume_bounds.size).r;
+        }
+        p1_tau *= dt * p1_sigma;
+    }
+    float p1_T = exp(-p1_tau);
+    vec3 p1_deep_ambient = vec3(p1_deep_r, p1_deep_g, p1_deep_b);
+    vec3 hair_result = shading * occlusion * p1_T
+                     + p1_deep_ambient * (1.0f - p1_T);
+
+    color = vec4(mix(background.rgb, hair_result, alpha), 1.0f);
 }
