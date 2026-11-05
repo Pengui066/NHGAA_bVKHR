@@ -44,6 +44,9 @@ layout(binding = 4) uniform Params {
     // M2 V3: the ADSM strand radius (was hard-coded to 15000 in
     // shading.frag; exposed for the calibration sweep).
     float adsm_strand_radius;
+
+    // M2 V4: exempt the specular lobe from the P1 transmittance.
+    int p1_spec_exempt;
 };
 
 #endif

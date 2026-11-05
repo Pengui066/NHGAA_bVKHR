@@ -121,6 +121,7 @@ int main(int argc, char** argv) {
     imgui.parameters.p1_deep_g      = argp["p1-deep-g"].value.floating;
     imgui.parameters.p1_deep_b      = argp["p1-deep-b"].value.floating;
     imgui.parameters.adsm_strand_radius = argp["adsm-radius"].value.floating;
+    imgui.parameters.p1_spec_exempt     = argp["p1-spec-exempt"].value.boolean;
 
     // The dump mode runs fully offline: keep the window hidden and exit
     // as soon as the last frame has been written to disk.

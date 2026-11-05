@@ -459,7 +459,8 @@ namespace vkhr {
                       << " tmax " << p.p1_t_max
                       << " deep [" << p.p1_deep_r << ", " << p.p1_deep_g
                       << ", " << p.p1_deep_b << "]"
-                      << " adsm_r " << p.adsm_strand_radius << std::endl;
+                      << " adsm_r " << p.adsm_strand_radius
+                      << " spec_exempt " << p.p1_spec_exempt << std::endl;
         }
 
         void ShadeDump::run() {
@@ -513,6 +514,7 @@ namespace vkhr {
                 shade_parameters.p1_deep_r      = renderer.imgui.parameters.p1_deep_r;
                 shade_parameters.p1_deep_g      = renderer.imgui.parameters.p1_deep_g;
                 shade_parameters.p1_deep_b      = renderer.imgui.parameters.p1_deep_b;
+                shade_parameters.p1_spec_exempt = renderer.imgui.parameters.p1_spec_exempt;
             }
 
             renderer.params[0].update(shade_parameters);

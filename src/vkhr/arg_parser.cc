@@ -232,5 +232,6 @@ namespace vkhr {
         { "p1-deep-g",        Argument::Type::Floating, Argument::make_floating(0.015f),"" },
         { "p1-deep-b",        Argument::Type::Floating, Argument::make_floating(0.005f),"" },
         { "adsm-radius",      Argument::Type::Floating, Argument::make_floating(15000.0f), "" },
+        { "p1-spec-exempt",   Argument::Type::Boolean,  Argument::make_boolean(false),     "" },
     };
 }

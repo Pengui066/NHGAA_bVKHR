@@ -98,6 +98,9 @@ namespace vkhr {
 
             // M2 V3: ADSM strand radius (mirrors the Params UBO tail).
             float adsm_strand_radius;
+
+            // M2 V4: exempt the specular lobe from the P1 transmittance.
+            int p1_spec_exempt;
         } parameters {
             KajiyaKay,
 
@@ -131,7 +134,8 @@ namespace vkhr {
             4.0f,                        // p1_t_max (scene units; 4 = 1.0 cm)
             0.03f, 0.015f, 0.005f,       // p1_deep_r/g/b: warm deep brown.
 
-            15000.0f                     // adsm_strand_radius (pre-M2 hardcode)
+            15000.0f,                    // adsm_strand_radius (pre-M2 hardcode)
+            false                        // p1_spec_exempt: attenuate spec too.
         };
 
         void default_parameters();

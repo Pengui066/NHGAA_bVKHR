@@ -117,5 +117,19 @@ void main() {
     vec3 hair_result = shading * occlusion * p1_T
                      + p1_deep_ambient * (1.0f - p1_T);
 
+    // M2 V4: specular exemption. When enabled the view-transmittance only
+    // attenuates the diffuse lobe, so the Kajiya-Kay highlight survives
+    // the march (the F-23b sweep showed T eating it: 5.77% -> 0.41% of
+    // pixels brighter than 1.3x the baseline). The OFF branch keeps the
+    // exact pre-V4 expression, so exempt=NO stays bit-identical.
+    if (p1_spec_exempt == YES) {
+        vec3 kk_diffuse  = kajiya_kay_diffuse(hair_color, tangent, light_direction);
+        vec3 kk_specular = kajiya_kay_specular(light_bulb_color, hair_exponent,
+                                               tangent, light_direction, eye_direction);
+        hair_result = kk_diffuse * occlusion * p1_T
+                    + kk_specular * occlusion
+                    + p1_deep_ambient * (1.0f - p1_T);
+    }
+
     color = vec4(mix(background.rgb, hair_result, alpha), 1.0f);
 }
