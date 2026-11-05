@@ -247,9 +247,34 @@ namespace vkhr {
                 }
         }
 
+        static void print_light_buffers(const char* tag,
+                                        const std::vector<LightSource::Buffer>& buffers) {
+            for (std::size_t i { 0 }; i < buffers.size(); ++i) {
+                const auto& b = buffers[i];
+                std::cerr << "[shade] " << tag << " light[" << i << "]"
+                          << " origin [" << b.origin.x << ", " << b.origin.y
+                          << ", " << b.origin.z << "]"
+                          << " intensity [" << b.intensity.x << ", " << b.intensity.y
+                          << ", " << b.intensity.z << "]"
+                          << " vector [" << b.vector.x << ", " << b.vector.y
+                          << ", " << b.vector.z << "]"
+                          << " near " << b.near << " far " << b.far << std::endl;
+                for (int row { 0 }; row < 4; ++row) {
+                    std::cerr << "[shade] " << tag << " light[" << i
+                              << "] view_projection[" << row << "] ["
+                              << b.view_projection[row][0] << ", "
+                              << b.view_projection[row][1] << ", "
+                              << b.view_projection[row][2] << ", "
+                              << b.view_projection[row][3] << "]" << std::endl;
+                }
+            }
+        }
+
         void ShadeDump::setup_frame_light(const nlohmann::json& frame_meta,
                                           unsigned frame_index) {
             glm::vec3 direction;
+            const char* light_source_tag = "recorded light";
+            bool direction_known = true;
 
             if (frame_meta.find("light_azimuth_rad") != frame_meta.end()) {
                 // New dumps record the exact per-frame light direction.
@@ -268,15 +293,33 @@ namespace vkhr {
                 float el = elevation(generator);
                 direction = glm::vec3 { glm::cos(el) * glm::cos(az), glm::sin(el),
                                         glm::cos(el) * glm::sin(az) };
+                light_source_tag = "re-derived light";
+            } else if (options.use_live_defaults) {
+                // F-23b: a static-light dump records no light at all, so the
+                // scene's own default light is what the live path shades
+                // with - and it is the same source, direction untouched.
+                //
+                // Nothing uploads the lights UBO offline (Rasterizer::update
+                // is only reached from draw()), which left the light-space
+                // projection matrix and the intensity at zero: no specular
+                // term at all, light_direction degenerating to a point at
+                // the world origin, and ADSM collapsing to pow(1 - alpha,
+                // 0) == 1, i.e. no shadow anywhere.
+                light_source_tag = "static scene light (shade-defaults=yes)";
+                direction_known = false;
             } else {
-                return; // static scene light as loaded.
+                return; // historical zero-page path: no light is uploaded.
             }
 
             for (auto& light_source : scene_graph.light_sources) {
-                light_source.set_direction(direction);
+                if (direction_known)
+                    light_source.set_direction(direction);
                 light_source.update_view_matrix();
             }
-            renderer.lights[0].update(scene_graph.fetch_light_source_buffers());
+
+            auto& light_buffers = scene_graph.fetch_light_source_buffers();
+            renderer.lights[0].update(light_buffers);
+            print_light_buffers(light_source_tag, light_buffers);
         }
 
         void ShadeDump::bake_shadow_maps(vk::CommandBuffer& command_buffer) {
