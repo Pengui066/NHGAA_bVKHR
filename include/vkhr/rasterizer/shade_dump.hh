@@ -35,6 +35,15 @@ namespace vkhr {
         // Debug: use the no-occlusion shading variant (isolates the
         // ADSM x LAO contribution, mirroring --nn-no-occlusion).
         bool disable_occlusion { false };
+
+        // F-23: the offline path never ran Rasterizer::update, so its
+        // Params UBO held a zero page: deep_shadows_on = 0 (ADSM skipped)
+        // and occlusion_radius = ao_exponent = 0 (LAO an identity). With
+        // this enabled the shade path uploads the very same parameter
+        // values the live path uploads, which is what makes the offline
+        // reference images actually use ADSM and LAO. Off by default so
+        // the historical reference images keep reproducing bit-for-bit.
+        bool use_live_defaults { false };
     };
 
     namespace vulkan {

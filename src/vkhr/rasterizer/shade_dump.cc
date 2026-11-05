@@ -399,21 +399,28 @@ namespace vkhr {
             readback_buffer.get_device_memory().unmap();
         }
 
+        static void print_parameters(const char* tag, const Interface::Parameters& p) {
+            std::cerr << "[shade] " << tag
+                      << " model "  << p.shading_model
+                      << " adsm_k " << p.adsm_kernel_size
+                      << " stride " << p.adsm_stride_size
+                      << " adsm_on " << p.adsm_on
+                      << " ctsm_k " << p.ctsm_kernel_size
+                      << " ctsm_on " << p.ctsm_on
+                      << " occ_radius " << p.occlusion_radius
+                      << " ao_exp " << p.ao_exponent
+                      << " ao_clamp " << p.ao_clamp
+                      << " p1 " << p.p1_enabled
+                      << " sigma " << p.p1_sigma
+                      << " steps " << p.p1_march_steps
+                      << " tmax " << p.p1_t_max
+                      << " deep [" << p.p1_deep_r << ", " << p.p1_deep_g
+                      << ", " << p.p1_deep_b << "]" << std::endl;
+        }
+
         void ShadeDump::run() {
             {
-                auto& p = renderer.imgui.parameters;
-                std::cerr << "[shade] params: model " << p.shading_model
-                          << " adsm_k " << p.adsm_kernel_size << " stride " << p.adsm_stride_size
-                          << " adsm_on " << p.adsm_on
-                          << " ctsm_k " << p.ctsm_kernel_size << " ctsm_on " << p.ctsm_on
-                          << " occ_radius " << p.occlusion_radius
-                          << " ao_exp " << p.ao_exponent << " ao_clamp " << p.ao_clamp
-                          << " p1 " << p.p1_enabled
-                          << " sigma " << p.p1_sigma
-                          << " steps " << p.p1_march_steps
-                          << " tmax " << p.p1_t_max
-                          << " deep [" << p.p1_deep_r << ", " << p.p1_deep_g
-                          << ", " << p.p1_deep_b << "]" << std::endl;
+                print_parameters("params:", renderer.imgui.parameters);
                 for (auto& light_source : scene_graph.light_sources) {
                     auto direction = light_source.get_direction();
                     auto intensity = light_source.get_intensity();
@@ -435,22 +442,41 @@ namespace vkhr {
                 descriptor_set.write(9 + j, renderer.shadow_maps[j].get_image_view(),
                                      renderer.shadow_maps[j].get_sampler());
 
-            // The live path uploads the rendering parameters every frame
-            // (Rasterizer::update), but the shade path never draws, so
-            // the UBO would otherwise hold uninitialized memory. Upload a
-            // deterministic copy: the legacy fields stay zero (matching
-            // the historical shade outputs bit-for-bit), while the P1
-            // tail carries the current values (CLI overrides included).
+            // F-23: the live path uploads the rendering parameters every
+            // frame (Rasterizer::update), but the shade path never draws,
+            // so its Params UBO holds a zero page: deep_shadows_on == 0
+            // (ADSM skipped outright) and occlusion_radius == ao_exponent
+            // == 0 (LAO = pow(1 - d/8, 0) == 1, i.e. an identity). That is
+            // why every historical offline reference image is plain
+            // single-layer Kajiya-Kay with no self-shadowing at all.
+            //
+            // --shade-defaults yes uploads exactly the values the live path
+            // uploads, so ADSM and LAO actually run offline. --shade-defaults
+            // no (the default) keeps the zero page so the historical
+            // reference images still reproduce bit-for-bit. The P1 tail is
+            // taken from the live parameters either way, so the CLI
+            // overrides apply in both modes.
             Interface::Parameters shade_parameters;
-            std::memset(&shade_parameters, 0, sizeof(shade_parameters));
-            shade_parameters.p1_enabled     = renderer.imgui.parameters.p1_enabled;
-            shade_parameters.p1_sigma       = renderer.imgui.parameters.p1_sigma;
-            shade_parameters.p1_march_steps = renderer.imgui.parameters.p1_march_steps;
-            shade_parameters.p1_t_max       = renderer.imgui.parameters.p1_t_max;
-            shade_parameters.p1_deep_r      = renderer.imgui.parameters.p1_deep_r;
-            shade_parameters.p1_deep_g      = renderer.imgui.parameters.p1_deep_g;
-            shade_parameters.p1_deep_b      = renderer.imgui.parameters.p1_deep_b;
+
+            if (options.use_live_defaults) {
+                shade_parameters = renderer.imgui.parameters;
+            } else {
+                std::memset(&shade_parameters, 0, sizeof(shade_parameters));
+                shade_parameters.p1_enabled     = renderer.imgui.parameters.p1_enabled;
+                shade_parameters.p1_sigma       = renderer.imgui.parameters.p1_sigma;
+                shade_parameters.p1_march_steps = renderer.imgui.parameters.p1_march_steps;
+                shade_parameters.p1_t_max       = renderer.imgui.parameters.p1_t_max;
+                shade_parameters.p1_deep_r      = renderer.imgui.parameters.p1_deep_r;
+                shade_parameters.p1_deep_g      = renderer.imgui.parameters.p1_deep_g;
+                shade_parameters.p1_deep_b      = renderer.imgui.parameters.p1_deep_b;
+            }
+
             renderer.params[0].update(shade_parameters);
+
+            print_parameters(options.use_live_defaults
+                             ? "uploaded params (shade-defaults=yes):"
+                             : "uploaded params (shade-defaults=no):",
+                             shade_parameters);
 
             std::string source_dir = options.dump_directory + "/" + options.source;
             std::string input_dir = options.dump_directory + "/input";
