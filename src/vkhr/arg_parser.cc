@@ -233,5 +233,9 @@ namespace vkhr {
         { "p1-deep-b",        Argument::Type::Floating, Argument::make_floating(0.005f),"" },
         { "adsm-radius",      Argument::Type::Floating, Argument::make_floating(15000.0f), "" },
         { "p1-spec-exempt",   Argument::Type::Boolean,  Argument::make_boolean(false),     "" },
+        { "shade-alpha-mode",   Argument::Type::Floating, Argument::make_floating(2.0f),    "" },
+        { "shade-alpha-layers", Argument::Type::Floating, Argument::make_floating(16.0f),   "" },
+        { "alpha-boost-threshold", Argument::Type::Floating, Argument::make_floating(0.0f), "" },
+        { "alpha-boost-factor",    Argument::Type::Floating, Argument::make_floating(0.0f), "" },
     };
 }

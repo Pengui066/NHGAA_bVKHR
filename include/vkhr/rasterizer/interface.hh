@@ -101,6 +101,10 @@ namespace vkhr {
 
             // M2 V4: exempt the specular lobe from the P1 transmittance.
             int p1_spec_exempt;
+
+            // M2 V5: low-coverage alpha boost (alpha_mode 3).
+            float alpha_boost_threshold;
+            float alpha_boost_factor;
         } parameters {
             KajiyaKay,
 
@@ -135,7 +139,9 @@ namespace vkhr {
             0.03f, 0.015f, 0.005f,       // p1_deep_r/g/b: warm deep brown.
 
             15000.0f,                    // adsm_strand_radius (pre-M2 hardcode)
-            false                        // p1_spec_exempt: attenuate spec too.
+            false,                       // p1_spec_exempt: attenuate spec too.
+
+            0.0f, 0.0f                   // alpha boost: off by default.
         };
 
         void default_parameters();

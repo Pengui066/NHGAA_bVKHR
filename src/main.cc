@@ -122,6 +122,8 @@ int main(int argc, char** argv) {
     imgui.parameters.p1_deep_b      = argp["p1-deep-b"].value.floating;
     imgui.parameters.adsm_strand_radius = argp["adsm-radius"].value.floating;
     imgui.parameters.p1_spec_exempt     = argp["p1-spec-exempt"].value.boolean;
+    imgui.parameters.alpha_boost_threshold = argp["alpha-boost-threshold"].value.floating;
+    imgui.parameters.alpha_boost_factor    = argp["alpha-boost-factor"].value.floating;
 
     // The dump mode runs fully offline: keep the window hidden and exit
     // as soon as the last frame has been written to disk.
@@ -162,6 +164,8 @@ int main(int argc, char** argv) {
         options.output_file    = argp["shade-out"].value.string;
         options.disable_occlusion = argp["shade-no-occlusion"].value.boolean == 1;
         options.use_live_defaults = argp["shade-defaults"].value.boolean == 1;
+        options.alpha_mode        = argp["shade-alpha-mode"].value.floating;
+        options.alpha_layers      = argp["shade-alpha-layers"].value.floating;
 
         try {
             rasterizer.shade_dump(scene_graph, options);

@@ -93,6 +93,14 @@ void main() {
         alpha = coverage;
     } else if (inverse_vp.alpha_mode == 2.0f) {
         alpha = 1.0f - pow(max(1.0f - alpha, 0.0f), inverse_vp.alpha_layers);
+    } else if (inverse_vp.alpha_mode == 3.0f) {
+        // M2 V5: mode 2 plus a low-coverage boost. Coverage below the
+        // threshold gets its alpha raised toward coverage * factor, so
+        // thin silhouette edges stop reading as see-through (the D7 gap:
+        // 720p edge alpha 0.74 vs the paper's 0.93).
+        alpha = 1.0f - pow(max(1.0f - alpha, 0.0f), inverse_vp.alpha_layers);
+        if (coverage < alpha_boost_threshold)
+            alpha = max(alpha, min(coverage * alpha_boost_factor, 1.0f));
     }
 
     // P1: view-direction transmittance darkening (thickness approximation,

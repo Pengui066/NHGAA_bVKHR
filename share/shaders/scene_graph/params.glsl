@@ -47,6 +47,10 @@ layout(binding = 4) uniform Params {
 
     // M2 V4: exempt the specular lobe from the P1 transmittance.
     int p1_spec_exempt;
+
+    // M2 V5: low-coverage alpha boost (alpha_mode 3).
+    float alpha_boost_threshold;
+    float alpha_boost_factor;
 };
 
 #endif

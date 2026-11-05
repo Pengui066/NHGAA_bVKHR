@@ -460,12 +460,16 @@ namespace vkhr {
                       << " deep [" << p.p1_deep_r << ", " << p.p1_deep_g
                       << ", " << p.p1_deep_b << "]"
                       << " adsm_r " << p.adsm_strand_radius
-                      << " spec_exempt " << p.p1_spec_exempt << std::endl;
+                      << " spec_exempt " << p.p1_spec_exempt
+                      << " boost [" << p.alpha_boost_threshold
+                      << ", " << p.alpha_boost_factor << "]" << std::endl;
         }
 
         void ShadeDump::run() {
             {
                 print_parameters("params:", renderer.imgui.parameters);
+                std::cerr << "[shade] alpha mode " << options.alpha_mode
+                          << " layers " << options.alpha_layers << std::endl;
                 for (auto& light_source : scene_graph.light_sources) {
                     auto direction = light_source.get_direction();
                     auto intensity = light_source.get_intensity();
@@ -515,6 +519,8 @@ namespace vkhr {
                 shade_parameters.p1_deep_g      = renderer.imgui.parameters.p1_deep_g;
                 shade_parameters.p1_deep_b      = renderer.imgui.parameters.p1_deep_b;
                 shade_parameters.p1_spec_exempt = renderer.imgui.parameters.p1_spec_exempt;
+                shade_parameters.alpha_boost_threshold = renderer.imgui.parameters.alpha_boost_threshold;
+                shade_parameters.alpha_boost_factor    = renderer.imgui.parameters.alpha_boost_factor;
             }
 
             renderer.params[0].update(shade_parameters);
