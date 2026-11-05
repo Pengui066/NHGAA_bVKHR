@@ -40,6 +40,10 @@ layout(binding = 4) uniform Params {
     float p1_deep_r;
     float p1_deep_g;
     float p1_deep_b;
+
+    // M2 V3: the ADSM strand radius (was hard-coded to 15000 in
+    // shading.frag; exposed for the calibration sweep).
+    float adsm_strand_radius;
 };
 
 #endif

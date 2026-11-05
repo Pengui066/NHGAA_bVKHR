@@ -458,7 +458,8 @@ namespace vkhr {
                       << " steps " << p.p1_march_steps
                       << " tmax " << p.p1_t_max
                       << " deep [" << p.p1_deep_r << ", " << p.p1_deep_g
-                      << ", " << p.p1_deep_b << "]" << std::endl;
+                      << ", " << p.p1_deep_b << "]"
+                      << " adsm_r " << p.adsm_strand_radius << std::endl;
         }
 
         void ShadeDump::run() {

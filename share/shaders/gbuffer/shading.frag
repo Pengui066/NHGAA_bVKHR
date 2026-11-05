@@ -77,7 +77,7 @@ void main() {
                                               lights[0].matrix * vec4(position, 1.0f),
                                               deep_shadows_kernel_size,
                                               deep_shadows_stride_size,
-                                              15000.0f, hair_alpha);
+                                              adsm_strand_radius, hair_alpha);
     }
 
     occlusion *= local_ambient_occlusion(strand_density,

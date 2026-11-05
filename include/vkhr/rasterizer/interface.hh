@@ -95,6 +95,9 @@ namespace vkhr {
             float p1_deep_r;
             float p1_deep_g;
             float p1_deep_b;
+
+            // M2 V3: ADSM strand radius (mirrors the Params UBO tail).
+            float adsm_strand_radius;
         } parameters {
             KajiyaKay,
 
@@ -126,7 +129,9 @@ namespace vkhr {
             8.0f,                        // p1_sigma
             16,                          // p1_march_steps
             4.0f,                        // p1_t_max (scene units; 4 = 1.0 cm)
-            0.03f, 0.015f, 0.005f        // p1_deep_r/g/b: warm deep brown.
+            0.03f, 0.015f, 0.005f,       // p1_deep_r/g/b: warm deep brown.
+
+            15000.0f                     // adsm_strand_radius (pre-M2 hardcode)
         };
 
         void default_parameters();
