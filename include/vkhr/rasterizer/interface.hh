@@ -125,7 +125,7 @@ namespace vkhr {
             false,                       // p1_enabled: off by default.
             8.0f,                        // p1_sigma
             16,                          // p1_march_steps
-            0.30f,                       // p1_t_max
+            4.0f,                        // p1_t_max (scene units; 4 = 1.0 cm)
             0.03f, 0.015f, 0.005f        // p1_deep_r/g/b: warm deep brown.
         };
 

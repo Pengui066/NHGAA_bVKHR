@@ -226,7 +226,7 @@ namespace vkhr {
         { "p1",               Argument::Type::Boolean,  Argument::make_boolean(false),  "" },
         { "p1-sigma",         Argument::Type::Floating, Argument::make_floating(8.0f),  "" },
         { "p1-march-steps",   Argument::Type::Integer,  Argument::make_integer(16),     "" },
-        { "p1-t-max",         Argument::Type::Floating, Argument::make_floating(0.30f), "" },
+        { "p1-t-max",         Argument::Type::Floating, Argument::make_floating(4.0f),  "" },
         { "p1-deep-r",        Argument::Type::Floating, Argument::make_floating(0.03f), "" },
         { "p1-deep-g",        Argument::Type::Floating, Argument::make_floating(0.015f),"" },
         { "p1-deep-b",        Argument::Type::Floating, Argument::make_floating(0.005f),"" },
